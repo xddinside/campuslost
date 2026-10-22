@@ -15,7 +15,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,9 +28,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 
 @Service
 public class PhotoStorageService {
@@ -34,6 +43,10 @@ public class PhotoStorageService {
     private static final Set<String> ALLOWED = Set.of("image/jpeg", "image/png", "image/webp");
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
     private static final int MAX_DIMENSION = 12_000;
+    /** Decoded-pixel budget: a few bytes per pixel keep uploads off the heap cliff. */
+    private static final long MAX_PIXELS = 40_000_000L;
+    /** Bounds concurrent decodes so the aggregate decoded size stays small. */
+    private static final Semaphore DECODE_PERMITS = new Semaphore(4);
 
     private final PhotoRepository photoRepository;
     private final ItemRepository itemRepository;
@@ -94,20 +107,58 @@ public class PhotoStorageService {
                     "You reached today's photo upload limit. Try again tomorrow.");
         }
 
+        // Read dimensions from the image header before allocating any decoded
+        // pixels; a compressed file can declare huge dimensions otherwise.
         BufferedImage image;
-        try (InputStream in = file.getInputStream()) {
-            image = ImageIO.read(in);
+        try (InputStream in = file.getInputStream();
+             ImageInputStream iis = ImageIO.createImageInputStream(in)) {
+            if (iis == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
+                        "That file is not a readable photo.");
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
+                        "That file is not a readable photo.");
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(iis, true, false);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width < 1 || height < 1) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
+                            "That file is not a readable photo.");
+                }
+                if (width > MAX_DIMENSION || height > MAX_DIMENSION
+                        || (long) width * height > MAX_PIXELS) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
+                            "That photo is too large to process safely.");
+                }
+                try {
+                    DECODE_PERMITS.acquire();
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_BUSY",
+                            "Photo processing is busy. Try again.");
+                }
+                try {
+                    image = reader.read(0);
+                } finally {
+                    DECODE_PERMITS.release();
+                }
+            } finally {
+                reader.dispose();
+            }
+        } catch (ApiException ex) {
+            throw ex;
         } catch (IOException | RuntimeException ex) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                     "That file is not a readable photo.");
         }
-        if (image == null || image.getWidth() < 1 || image.getHeight() < 1) {
+        if (image == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                     "That file is not a readable photo.");
-        }
-        if (image.getWidth() > MAX_DIMENSION || image.getHeight() > MAX_DIMENSION) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
-                    "Photos must be 12000 pixels or smaller on each side.");
         }
 
         // Re-encode decoded pixels so EXIF metadata, GPS, and embedded payloads
@@ -156,7 +207,9 @@ public class PhotoStorageService {
         if (photoId == null) {
             return;
         }
-        Photo photo = photoRepository.findById(photoId)
+        // The row lock makes single-item attachment atomic: two concurrent
+        // attach requests cannot both observe an unattached photo.
+        Photo photo = photoRepository.findByIdForUpdate(photoId)
                 .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                         "That photo no longer exists. Upload it again."));
         if (!photo.getUploader().getId().equals(actor.getId())) {
@@ -178,12 +231,14 @@ public class PhotoStorageService {
         if (photoId == null) {
             return;
         }
-        photoRepository.findById(photoId).ifPresent(photo -> {
+        photoRepository.findByIdForUpdate(photoId).ifPresent(photo -> {
             Path file = root.resolve(photo.getStorageName()).normalize();
-            if (file.startsWith(root)) {
-                deleteQuietly(file);
-            }
             photoRepository.delete(photo);
+            // The file disappears only after the row removal commits, so a
+            // rollback can never leave a database reference to a deleted file.
+            if (file.startsWith(root)) {
+                deleteAfterCommit(file);
+            }
         });
     }
 
@@ -213,15 +268,17 @@ public class PhotoStorageService {
     @Transactional
     public int cleanupUnattached(int olderThanHours) {
         int removed = 0;
+        List<Path> files = new ArrayList<>();
         for (Photo photo : photoRepository.findByAttachedItemIdIsNullAndCreatedAtBefore(
                 Instant.now().minus(olderThanHours, ChronoUnit.HOURS))) {
             Path file = root.resolve(photo.getStorageName()).normalize();
-            if (file.startsWith(root)) {
-                deleteQuietly(file);
-            }
             photoRepository.delete(photo);
+            if (file.startsWith(root)) {
+                files.add(file);
+            }
             removed++;
         }
+        files.forEach(PhotoStorageService::deleteAfterCommit);
         return removed;
     }
 
@@ -239,6 +296,20 @@ public class PhotoStorageService {
             return "";
         }
         return name.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private static void deleteAfterCommit(Path path) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            deleteQuietly(path);
+                        }
+                    });
+        } else {
+            deleteQuietly(path);
+        }
     }
 
     private static void deleteQuietly(Path path) {
