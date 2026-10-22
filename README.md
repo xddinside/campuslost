@@ -64,10 +64,33 @@ pnpm build
 pnpm audit
 ```
 
-The backend uses Flyway (`backend/src/main/resources/db/migration`). Existing
-databases are adopted at baseline V1 and upgraded to the current schema on boot;
+The backend uses Flyway (`backend/src/main/resources/db/migration`) and
 Hibernate runs with `ddl-auto: validate`. Tests use
 `src/test/resources/application-test.yml` and the `lostfound_test` database.
+
+### Adopting a pre-Flyway database
+
+Automatic baseline-on-migrate is off: an existing database that has no
+`flyway_schema_history` table will fail startup instead of being silently
+altered. To adopt such a database deliberately, once:
+
+```bash
+# 1. Back up.
+mariadb-dump -uroot lostfound > backup.sql
+
+# 2. Confirm the schema is the pre-Flyway one the adoption expects, then run
+#    a one-off boot that baselines it at V1 and applies all later migrations.
+SPRING_FLYWAY_BASELINE_ON_MIGRATE=true scripts/dev-backend.sh
+
+# 3. Verify preserved data before putting the app back up.
+mariadb -ulostfound -plostfound lostfound \
+  -e "SELECT COUNT(*) AS users FROM users; SELECT COUNT(*) AS items FROM items; \
+      SELECT COUNT(*) AS claims FROM claims; \
+      SELECT MAX(version) FROM flyway_schema_history;"
+```
+
+Compare those counts with the pre-migration backup. Normal startups afterwards
+need no flag — the schema history table exists by then.
 
 ## API overview
 
