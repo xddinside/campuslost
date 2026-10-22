@@ -72,6 +72,11 @@ public class ClaimWorkflow {
             throw new ApiException(HttpStatus.BAD_REQUEST, "OWN_REPORT",
                     "You cannot claim your own report.");
         }
+        if (request.message().trim().length() < 10) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED",
+                    "Write at least 10 characters.",
+                    Map.of("message", "Write at least 10 characters."));
+        }
 
         Item lostReport = null;
         if (target.getType() == ItemType.FOUND) {
