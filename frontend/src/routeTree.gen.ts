@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as MyRouteImport } from './routes/my'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ReportRouteImport } from './routes/report'
+import { Route as ClaimsClaimIdRouteImport } from './routes/claims.$claimId'
 import { Route as ItemsIdRouteImport } from './routes/items.$id'
 import { Route as ItemsIdEditRouteImport } from './routes/items_.$id.edit'
 
@@ -48,6 +49,11 @@ const ReportRoute = ReportRouteImport.update({
   path: '/report',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ClaimsClaimIdRoute = ClaimsClaimIdRouteImport.update({
+  id: '/claims/$claimId',
+  path: '/claims/$claimId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ItemsIdRoute = ItemsIdRouteImport.update({
   id: '/items/$id',
   path: '/items/$id',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/my': typeof MyRoute
   '/register': typeof RegisterRoute
   '/report': typeof ReportRoute
+  '/claims/$claimId': typeof ClaimsClaimIdRoute
   '/items/$id': typeof ItemsIdRoute
   '/items/$id/edit': typeof ItemsIdEditRoute
 }
@@ -76,6 +83,7 @@ export interface FileRoutesByTo {
   '/my': typeof MyRoute
   '/register': typeof RegisterRoute
   '/report': typeof ReportRoute
+  '/claims/$claimId': typeof ClaimsClaimIdRoute
   '/items/$id': typeof ItemsIdRoute
   '/items/$id/edit': typeof ItemsIdEditRoute
 }
@@ -87,6 +95,7 @@ export interface FileRoutesById {
   '/my': typeof MyRoute
   '/register': typeof RegisterRoute
   '/report': typeof ReportRoute
+  '/claims/$claimId': typeof ClaimsClaimIdRoute
   '/items/$id': typeof ItemsIdRoute
   '/items_/$id/edit': typeof ItemsIdEditRoute
 }
@@ -99,6 +108,7 @@ export interface FileRouteTypes {
     | '/my'
     | '/register'
     | '/report'
+    | '/claims/$claimId'
     | '/items/$id'
     | '/items/$id/edit'
   fileRoutesByTo: FileRoutesByTo
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/my'
     | '/register'
     | '/report'
+    | '/claims/$claimId'
     | '/items/$id'
     | '/items/$id/edit'
   id:
@@ -119,6 +130,7 @@ export interface FileRouteTypes {
     | '/my'
     | '/register'
     | '/report'
+    | '/claims/$claimId'
     | '/items/$id'
     | '/items_/$id/edit'
   fileRoutesById: FileRoutesById
@@ -130,6 +142,7 @@ export interface RootRouteChildren {
   MyRoute: typeof MyRoute
   RegisterRoute: typeof RegisterRoute
   ReportRoute: typeof ReportRoute
+  ClaimsClaimIdRoute: typeof ClaimsClaimIdRoute
   ItemsIdRoute: typeof ItemsIdRoute
   ItemsIdEditRoute: typeof ItemsIdEditRoute
 }
@@ -178,6 +191,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/claims/$claimId': {
+      id: '/claims/$claimId'
+      path: '/claims/$claimId'
+      fullPath: '/claims/$claimId'
+      preLoaderRoute: typeof ClaimsClaimIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/items/$id': {
       id: '/items/$id'
       path: '/items/$id'
@@ -202,6 +222,7 @@ const rootRouteChildren: RootRouteChildren = {
   MyRoute: MyRoute,
   RegisterRoute: RegisterRoute,
   ReportRoute: ReportRoute,
+  ClaimsClaimIdRoute: ClaimsClaimIdRoute,
   ItemsIdRoute: ItemsIdRoute,
   ItemsIdEditRoute: ItemsIdEditRoute,
 }

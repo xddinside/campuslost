@@ -62,12 +62,17 @@ function ItemDetailPage() {
 
   const { data: item, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.publicItem(id),
-    queryFn: () => api<Item>(`/items/${id}`),
+    queryFn: ({ signal }) => api<Item>(`/items/${id}`, { signal }),
   })
 
-  const { data: myClaims, isLoading: isLoadingMyClaims } = useQuery({
+  const {
+    data: myClaims,
+    isLoading: isLoadingMyClaims,
+    isError: isErrorMyClaims,
+    refetch: refetchMyClaims,
+  } = useQuery({
     queryKey: queryKeys.accountClaims(user?.id ?? 0),
-    queryFn: () => api<Claim[]>('/me/claims'),
+    queryFn: ({ signal }) => api<Claim[]>('/me/claims', { signal }),
     enabled: hydrated && !!user,
   })
 
@@ -107,7 +112,11 @@ function ItemDetailPage() {
     )
   }
 
-  const canClaim = Boolean(hydrated && user && !canManage && !activeClaim && item.status === 'OPEN')
+  // The claim form only opens once the claimant's history is known — a
+  // failed lookup must never offer a form that could duplicate a claim.
+  const canClaim = Boolean(
+    hydrated && user && !canManage && myClaims && !activeClaim && item.status === 'OPEN',
+  )
   const occurredLabel = item.type === 'LOST' ? 'Lost on' : 'Found on'
   const authReturnTo = lostReportId && item.type === 'FOUND'
     ? `/items/${item.id}?lostReportId=${lostReportId}`
@@ -185,6 +194,15 @@ function ItemDetailPage() {
             <Card className="rounded-xl shadow-none ring-border">
               <CardContent className="text-sm text-muted-foreground">
                 Checking your response status…
+              </CardContent>
+            </Card>
+          ) : hydrated && user && isErrorMyClaims ? (
+            <Card className="rounded-xl shadow-none ring-border">
+              <CardContent className="flex items-center gap-3 text-sm">
+                <span className="text-destructive">Couldn't load your response history.</span>
+                <Button size="sm" variant="outline" onClick={() => void refetchMyClaims()}>
+                  Retry
+                </Button>
               </CardContent>
             </Card>
           ) : selectedClaim && user ? (
@@ -384,7 +402,7 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
 
   const { data: linkedReport } = useQuery({
     queryKey: queryKeys.publicItem(lostReportId ?? 0),
-    queryFn: () => api<Item>(`/items/${lostReportId}`),
+    queryFn: ({ signal }) => api<Item>(`/items/${lostReportId}`, { signal }),
     enabled: !!lostReportId,
   })
 

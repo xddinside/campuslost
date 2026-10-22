@@ -39,13 +39,13 @@ function AdminPage() {
 
   const { data: stats } = useQuery({
     queryKey: queryKeys.adminStats(),
-    queryFn: () => api<AdminStats>('/admin/stats'),
+    queryFn: ({ signal }) => api<AdminStats>('/admin/stats', { signal }),
     enabled: isAdmin,
   })
 
   const { data: items, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.adminItems(),
-    queryFn: () => api<Item[]>('/admin/items'),
+    queryFn: ({ signal }) => api<Item[]>('/admin/items', { signal }),
     enabled: isAdmin,
   })
 

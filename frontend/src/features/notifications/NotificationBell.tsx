@@ -164,10 +164,16 @@ export function NotificationBell(_props: NotificationBellProps) {
                         if (!notification.readAt) markRead.mutate(notification.id)
                         // The alert's destination renders claims, reports, and
                         // matches that this notification just changed; drop the
-                        // account cache so the target page refetches them.
+                        // account cache and the destination's public item cache
+                        // so the target page refetches both.
                         void queryClient.invalidateQueries({
                           queryKey: queryKeys.account(user?.id ?? 0),
                         })
+                        if (notification.itemId) {
+                          void queryClient.invalidateQueries({
+                            queryKey: queryKeys.publicItem(String(notification.itemId)),
+                          })
+                        }
                         setOpen(false)
                       }}
                     />

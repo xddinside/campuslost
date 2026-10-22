@@ -109,7 +109,7 @@ function BrowsePage() {
 
   const { data: items, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.publicItems(filters),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api<Item[]>(
         `/items${qs({
           type: filters.type,
@@ -118,6 +118,7 @@ function BrowsePage() {
           q: filters.q,
           status: filters.status,
         })}`,
+        { signal },
       ),
   })
 

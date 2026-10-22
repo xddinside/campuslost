@@ -35,7 +35,7 @@ function EditItemPage() {
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.accountItemEdit(userId, id),
-    queryFn: () => api<ItemEdit>(`/items/${id}/edit`),
+    queryFn: ({ signal }) => api<ItemEdit>(`/items/${id}/edit`, { signal }),
     enabled: hydrated && !!user,
   })
 

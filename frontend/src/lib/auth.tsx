@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, AUTH_EXPIRED_EVENT, api, clearAuth, readAuth, writeAuth } from './api'
@@ -23,7 +23,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
 
+  // An in-flight session validation from a previous identity generation:
+  // adopting or clearing a session aborts it, and every outcome is checked
+  // against the token still being current.
+  const validationAbort = useRef<AbortController | null>(null)
+
   const clearIdentity = useCallback(async () => {
+    validationAbort.current?.abort()
     clearAuth()
     setUser(null)
     await queryClient.cancelQueries()
@@ -31,6 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient])
 
   useEffect(() => {
+    const controller = new AbortController()
+    validationAbort.current = controller
     let cancelled = false
     const stored = readAuth()
     if (!stored) {
@@ -39,17 +47,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // A stored profile is a hint, not proof. Validate the token once before
-    // private queries are allowed to run.
-    api<UserDto>('/auth/me')
+    // private queries are allowed to run. Every outcome — success, a 401,
+    // or a network failure — only applies while the stored token is still
+    // the current session.
+    const isCurrentSession = () => !cancelled && readAuth()?.token === stored.token
+    api<UserDto>('/auth/me', { signal: controller.signal })
       .then((current) => {
-        // A login that happened while this validation was in flight must win:
-        // only restore when the stored token is still the current one.
-        if (cancelled || readAuth()?.token !== stored.token) return
+        if (!isCurrentSession()) return
         writeAuth({ token: stored.token, user: current })
         setUser(current)
       })
       .catch((error: unknown) => {
-        if (cancelled) return
+        if (!isCurrentSession()) return
         if (error instanceof ApiError && error.status === 401) {
           clearAuth()
         } else {
@@ -59,11 +68,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .finally(() => {
+        // Hydration is a one-shot: a cleared session still counts as settled.
         if (!cancelled) setHydrated(true)
       })
 
     return () => {
       cancelled = true
+      controller.abort()
+      if (validationAbort.current === controller) validationAbort.current = null
     }
   }, [])
 
@@ -77,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearIdentity])
 
   const adoptSession = useCallback(async (response: AuthResponse) => {
+    validationAbort.current?.abort()
     await queryClient.cancelQueries()
     queryClient.clear()
     writeAuth(response)

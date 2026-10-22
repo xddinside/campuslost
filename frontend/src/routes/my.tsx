@@ -193,8 +193,9 @@ function MyClaims({ userId }: { userId: number }) {
             <CardContent>
               <div className="flex flex-wrap items-center gap-2">
                 <Link
-                  to="/items/$id"
-                  params={{ id: String(claim.itemId) }}
+                  to="/claims/$claimId"
+                  params={{ claimId: String(claim.id) }}
+                  search={{ itemId: claim.itemId }}
                   className="text-base font-bold no-underline"
                 >
                   {claim.itemTitle}
