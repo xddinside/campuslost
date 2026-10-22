@@ -99,10 +99,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String clientAddress(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
-        }
+        // The caller controls X-Forwarded-For, so trusting it would let each
+        // attempt claim a fresh bucket. No trusted front proxy rewrites that
+        // header here, so the socket address is the only honest key.
         return request.getRemoteAddr();
     }
 }
