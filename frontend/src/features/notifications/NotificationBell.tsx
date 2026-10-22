@@ -149,6 +149,11 @@ export function NotificationBell(_props: NotificationBellProps) {
                   Couldn't refresh just now. Showing the last loaded alerts.
                 </p>
               )}
+              {(markRead.isError || markAllRead.isError) && (
+                <p role="alert" className="m-0 border-b border-[var(--border)] px-4 py-2 text-xs text-destructive">
+                  Couldn't update read state. Try again.
+                </p>
+              )}
               <ul className="m-0 divide-y divide-[var(--border)] p-0">
                 {notifications.map((notification) => (
                   <li key={notification.id} className="list-none">
@@ -237,6 +242,23 @@ function NotificationRow({
   if (!notification.itemId) {
     return (
       <Link to="/my" onClick={onOpen} className={className}>
+        {content}
+      </Link>
+    )
+  }
+
+  // Claim status alerts open that claim's history on the report — completed
+  // and rejected claims are not active claims, so they need their own
+  // destination instead of the default claim panel.
+  if (notification.claimId) {
+    return (
+      <Link
+        to="/items/$id"
+        params={{ id: String(notification.itemId) }}
+        search={{ claimId: notification.claimId }}
+        onClick={onOpen}
+        className={className}
+      >
         {content}
       </Link>
     )

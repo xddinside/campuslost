@@ -86,6 +86,7 @@ function EditForm({ edit }: { edit: ItemEdit }) {
     photoId: edit.photoId,
     photoUrl: edit.photoUrl,
   })
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -246,7 +247,12 @@ function EditForm({ edit }: { edit: ItemEdit }) {
               />
             )}
 
-            <PhotoField value={photo} onChange={setPhoto} disabled={mutation.isPending} />
+            <PhotoField
+              value={photo}
+              onChange={setPhoto}
+              onBusyChange={setPhotoBusy}
+              disabled={mutation.isPending}
+            />
 
             {error && (
               <Alert variant="destructive">
@@ -255,7 +261,7 @@ function EditForm({ edit }: { edit: ItemEdit }) {
             )}
 
             <div className="flex gap-3">
-              <Button type="submit" className="h-10 rounded-lg px-6" disabled={mutation.isPending}>
+              <Button type="submit" className="h-10 rounded-lg px-6" disabled={mutation.isPending || photoBusy}>
                 {mutation.isPending ? 'Saving…' : 'Save changes'}
               </Button>
               <Button

@@ -40,20 +40,24 @@ import type { Claim, ClaimInput, Item } from '../lib/types'
 
 interface ItemSearch {
   lostReportId?: number
+  claimId?: number
 }
 
 export const Route = createFileRoute('/items/$id')({
   validateSearch: (search: Record<string, unknown>): ItemSearch => {
-    const raw = search.lostReportId
-    const parsed = typeof raw === 'number' ? raw : Number(raw)
-    return Number.isInteger(parsed) && parsed > 0 ? { lostReportId: parsed } : {}
+    const parsed: ItemSearch = {}
+    const lost = typeof search.lostReportId === 'number' ? search.lostReportId : Number(search.lostReportId)
+    if (Number.isInteger(lost) && lost > 0) parsed.lostReportId = lost
+    const claim = typeof search.claimId === 'number' ? search.claimId : Number(search.claimId)
+    if (Number.isInteger(claim) && claim > 0) parsed.claimId = claim
+    return parsed
   },
   component: ItemDetailPage,
 })
 
 function ItemDetailPage() {
   const { id } = Route.useParams()
-  const { lostReportId } = Route.useSearch()
+  const { lostReportId, claimId } = Route.useSearch()
   const { user, hydrated } = useAuth()
 
   const { data: item, isLoading, isError, error } = useQuery({
@@ -70,6 +74,11 @@ function ItemDetailPage() {
   const activeClaim = item && myClaims?.find(
     (claim) => claim.itemId === item.id && isActiveClaim(claim.status),
   )
+  // A claim notification links straight to that claim's history, including
+  // terminal states the active-claim lookup cannot see.
+  const selectedClaim = item && claimId
+    ? myClaims?.find((claim) => claim.id === claimId && claim.itemId === item.id)
+    : undefined
   const canManage = Boolean(
     item && user && (user.role === 'ADMIN' || user.id === item.reporterId),
   )
@@ -178,6 +187,13 @@ function ItemDetailPage() {
                 Checking your response status…
               </CardContent>
             </Card>
+          ) : selectedClaim && user ? (
+            <ExistingClaimPanel
+              key={`${user.id}:${item.id}:${selectedClaim.id}`}
+              claim={selectedClaim}
+              item={item}
+              userId={user.id}
+            />
           ) : activeClaim && user ? (
             <ExistingClaimPanel
               key={`${user.id}:${item.id}:${activeClaim.id}`}
@@ -608,9 +624,9 @@ function ExistingClaimPanel({ claim, item, userId }: { claim: Claim; item: Item;
 function ClaimsPanel({ item, userId }: { item: Item; userId: number }) {
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
-  const { data: claims, isLoading } = useQuery({
+  const { data: claims, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.accountItemClaims(userId, item.id),
-    queryFn: () => api<Claim[]>(`/items/${item.id}/claims`),
+    queryFn: ({ signal }) => api<Claim[]>(`/items/${item.id}/claims`, { signal }),
   })
 
   const decide = useMutation({
@@ -631,6 +647,12 @@ function ClaimsPanel({ item, userId }: { item: Item; userId: number }) {
       <CardContent>
         <p className="island-kicker mb-3">Responses ({claims?.length ?? 0})</p>
         {isLoading && <p className="m-0 text-sm text-muted-foreground">Loading responses…</p>}
+        {isError && (
+          <div className="flex items-center gap-2">
+            <p className="m-0 text-sm text-destructive">Couldn't load responses.</p>
+            <Button size="sm" variant="outline" onClick={() => void refetch()}>Retry</Button>
+          </div>
+        )}
         {claims && claims.length === 0 && (
           <p className="m-0 text-sm text-muted-foreground">
             No responses yet.

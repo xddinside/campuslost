@@ -1,5 +1,7 @@
 import { createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { Alert, AlertDescription } from '#/components/ui/alert.tsx'
 import { Badge } from '#/components/ui/badge.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import { Card, CardContent } from '#/components/ui/card.tsx'
@@ -40,9 +42,10 @@ function MyItemsPage() {
 
 function MyReports({ userId }: { userId: number }) {
   const queryClient = useQueryClient()
-  const { data: items, isLoading } = useQuery({
+  const [actionError, setActionError] = useState<string | null>(null)
+  const { data: items, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.accountReports(userId),
-    queryFn: () => api<Item[]>('/items/me/reported'),
+    queryFn: ({ signal }) => api<Item[]>('/items/me/reported', { signal }),
   })
 
   const resolve = useMutation({
@@ -51,7 +54,11 @@ function MyReports({ userId }: { userId: number }) {
         method: 'PATCH',
         body: JSON.stringify({ status: 'RESOLVED' }),
       }),
-    onSuccess: async () => { await invalidateWorkflow(queryClient) },
+    onSuccess: async () => {
+      setActionError(null)
+      await invalidateWorkflow(queryClient)
+    },
+    onError: (err) => setActionError(`Could not resolve the report: ${(err as Error).message}`),
   })
 
   return (
@@ -62,6 +69,19 @@ function MyReports({ userId }: { userId: number }) {
           <Card size="sm" className="rounded-xl shadow-none ring-border">
             <CardContent className="text-sm text-muted-foreground">Loading…</CardContent>
           </Card>
+        )}
+        {isError && (
+          <Card size="sm" className="rounded-xl shadow-none ring-border">
+            <CardContent className="flex items-center gap-3 text-sm">
+              <span className="text-destructive">Couldn't load your reports.</span>
+              <Button size="sm" variant="outline" onClick={() => void refetch()}>Retry</Button>
+            </CardContent>
+          </Card>
+        )}
+        {actionError && (
+          <Alert variant="destructive">
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
         )}
         {items && items.length === 0 && (
           <Card size="sm" className="rounded-xl shadow-none ring-border">
@@ -138,9 +158,9 @@ function MyReports({ userId }: { userId: number }) {
 
 function MyClaims({ userId }: { userId: number }) {
   const queryClient = useQueryClient()
-  const { data: claims, isLoading } = useQuery({
+  const { data: claims, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.accountClaims(userId),
-    queryFn: () => api<Claim[]>('/me/claims'),
+    queryFn: ({ signal }) => api<Claim[]>('/me/claims', { signal }),
   })
 
   return (
@@ -150,6 +170,14 @@ function MyClaims({ userId }: { userId: number }) {
         {isLoading && (
           <Card size="sm" className="rounded-xl shadow-none ring-border">
             <CardContent className="text-sm text-muted-foreground">Loading…</CardContent>
+          </Card>
+        )}
+        {isError && (
+          <Card size="sm" className="rounded-xl shadow-none ring-border">
+            <CardContent className="flex items-center gap-3 text-sm">
+              <span className="text-destructive">Couldn't load your responses.</span>
+              <Button size="sm" variant="outline" onClick={() => void refetch()}>Retry</Button>
+            </CardContent>
           </Card>
         )}
         {claims && claims.length === 0 && (

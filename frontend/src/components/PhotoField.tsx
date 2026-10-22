@@ -14,10 +14,12 @@ export interface PhotoValue {
 interface PhotoFieldProps {
   value: PhotoValue
   onChange: (value: PhotoValue) => void
+  /** Reports when an upload is in flight so the parent can block submit. */
+  onBusyChange?: (busy: boolean) => void
   disabled?: boolean
 }
 
-export function PhotoField({ value, onChange, disabled }: PhotoFieldProps) {
+export function PhotoField({ value, onChange, onBusyChange, disabled }: PhotoFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +31,10 @@ export function PhotoField({ value, onChange, disabled }: PhotoFieldProps) {
   useEffect(() => () => {
     if (localPreview) URL.revokeObjectURL(localPreview)
   }, [localPreview])
+
+  useEffect(() => {
+    onBusyChange?.(uploading)
+  }, [uploading, onBusyChange])
 
   function clearPreview() {
     setLocalPreview((current) => {

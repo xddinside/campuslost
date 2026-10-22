@@ -42,6 +42,7 @@ function ReportPage() {
     photoId: null,
     photoUrl: null,
   })
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
@@ -224,7 +225,12 @@ function ReportPage() {
               />
             )}
 
-            <PhotoField value={photo} onChange={setPhoto} disabled={mutation.isPending} />
+            <PhotoField
+              value={photo}
+              onChange={setPhoto}
+              onBusyChange={setPhotoBusy}
+              disabled={mutation.isPending}
+            />
 
             {error && (
               <Alert variant="destructive">
@@ -236,7 +242,7 @@ function ReportPage() {
               <Button
                 className="h-10 rounded-lg px-6"
                 type="submit"
-                disabled={mutation.isPending || !questionValidity.valid}
+                disabled={mutation.isPending || photoBusy || !questionValidity.valid}
               >
                 {mutation.isPending ? 'Posting…' : 'Post report'}
               </Button>
