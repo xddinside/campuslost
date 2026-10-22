@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, useRouter } from '@tanstack/react-router'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Alert, AlertDescription } from '#/components/ui/alert.tsx'
 import { Button } from '#/components/ui/button.tsx'
@@ -16,9 +16,12 @@ import {
 } from '#/components/ui/select.tsx'
 import { Textarea } from '#/components/ui/textarea.tsx'
 import { ToggleGroup, ToggleGroupItem } from '#/components/ui/toggle-group.tsx'
-import { api } from '../lib/api'
+import { PhotoField } from '../components/PhotoField'
+import { OwnershipQuestionField } from '../features/ownership'
+import { ApiError, api } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { CATEGORIES } from '../lib/format'
+import { CATEGORIES, dateInputToIso } from '../lib/format'
+import { invalidateWorkflow } from '../lib/query'
 import type { ItemInput, ItemType } from '../lib/types'
 
 export const Route = createFileRoute('/report')({ component: ReportPage })
@@ -26,42 +29,63 @@ export const Route = createFileRoute('/report')({ component: ReportPage })
 function ReportPage() {
   const { user, hydrated } = useAuth()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [type, setType] = useState<ItemType>('LOST')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [category, setCategory] = useState(CATEGORIES[0])
   const [location, setLocation] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [ownershipQuestion, setOwnershipQuestion] = useState('')
+  const [questionValidity, setQuestionValidity] = useState<{ valid: boolean; message?: string }>({ valid: true })
+  const [photo, setPhoto] = useState<{ photoId: string | null; photoUrl: string | null }>({
+    photoId: null,
+    photoUrl: null,
+  })
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   const mutation = useMutation({
     mutationFn: (input: ItemInput) => api<{ id: number }>('/items', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-    onSuccess: (item) => {
-      router.navigate({ to: '/items/$id', params: { id: String(item.id) } })
+    onSuccess: async (item) => {
+      await invalidateWorkflow(queryClient)
+      await router.navigate({ to: '/items/$id', params: { id: String(item.id) } })
     },
-    onError: (err) => setError((err as Error).message),
+    onError: (err) => {
+      if (err instanceof ApiError) {
+        setFieldErrors(err.fieldErrors)
+        setError(err.message)
+      } else {
+        setError('Could not post this report.')
+      }
+    },
   })
 
   if (hydrated && !user) {
-    return <Navigate to="/login" />
+    return <Navigate to="/login" search={{ redirect: '/report' }} />
   }
 
-  function onSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  function onSubmit(event: React.FormEvent) {
+    event.preventDefault()
     setError(null)
-    const dateIso = date
-      ? new Date(`${date}T12:00:00`).toISOString()
-      : new Date().toISOString()
+    setFieldErrors({})
+    if (!questionValidity.valid) {
+      setError(questionValidity.message ?? 'Fix the ownership question first.')
+      return
+    }
+    const dateIso = date ? dateInputToIso(date) : new Date().toISOString()
     mutation.mutate({
       type,
-      title,
-      description,
+      title: title.trim(),
+      description: description.trim(),
       category,
-      location,
+      location: location.trim(),
       dateOccurred: dateIso,
+      ownershipQuestion: type === 'FOUND' ? (ownershipQuestion.trim() || null) : undefined,
+      photoId: photo.photoId,
     })
   }
 
@@ -71,8 +95,8 @@ function ReportPage() {
         <p className="island-kicker mb-2">Report</p>
         <h1 className="demo-title mb-2">Report an item</h1>
         <p className="demo-muted mb-8">
-          Tell the community what happened — be specific so a match is easy to
-          make.
+          Be specific enough to help a match, but keep identifying details out of
+          a found-item description.
         </p>
       </div>
 
@@ -83,18 +107,19 @@ function ReportPage() {
               value={[type]}
               onValueChange={(values) => {
                 const nextType = values[0]
-                if (nextType) setType(nextType as ItemType)
+                if (nextType) {
+                  setType(nextType as ItemType)
+                  if (nextType === 'LOST') setOwnershipQuestion('')
+                }
               }}
               variant="default"
               spacing={1}
               className="w-full rounded-2xl border border-border bg-muted p-1.5"
             >
-              {(
-                [
-                  ['LOST', 'I lost something'],
-                  ['FOUND', 'I found something'],
-                ] as const
-              ).map(([value, label]) => (
+              {([
+                ['LOST', 'I lost something'],
+                ['FOUND', 'I found something'],
+              ] as const).map(([value, label]) => (
                 <ToggleGroupItem
                   key={value}
                   value={value}
@@ -112,13 +137,15 @@ function ReportPage() {
                 required
                 maxLength={120}
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(event) => setTitle(event.target.value)}
+                aria-invalid={fieldErrors.title ? 'true' : undefined}
                 placeholder={
                   type === 'LOST'
                     ? 'e.g. Black MacBook Pro 14" with a blue case'
                     : 'e.g. Water bottle found near the gym'
                 }
               />
+              {fieldErrors.title && <span className="text-xs text-destructive">{fieldErrors.title}</span>}
             </Label>
 
             <Label className="grid gap-2">
@@ -126,23 +153,29 @@ function ReportPage() {
               <Textarea
                 className="report-field min-h-28 py-3"
                 required
+                maxLength={4000}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Include distinguishing details, what happened, where it was left, and how to verify ownership…"
+                onChange={(event) => setDescription(event.target.value)}
+                aria-invalid={fieldErrors.description ? 'true' : undefined}
+                placeholder={
+                  type === 'FOUND'
+                    ? 'Where it was found and when. Leave out details that would let anyone claim it.'
+                    : 'Include distinguishing details and what happened.'
+                }
               />
+              <span className="text-xs text-muted-foreground">
+                {description.length}/4000 characters
+              </span>
+              {fieldErrors.description && (
+                <span className="text-xs text-destructive">{fieldErrors.description}</span>
+              )}
             </Label>
 
             <div className="grid gap-5 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="item-category">Category</Label>
-                <Select
-                  value={category}
-                  onValueChange={(value) => value && setCategory(value)}
-                >
-                  <SelectTrigger
-                    id="item-category"
-                    className="report-field w-full"
-                  >
+                <Select value={category} onValueChange={(value) => value && setCategory(value)}>
+                  <SelectTrigger id="item-category" className="report-field w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent align="start">
@@ -159,8 +192,9 @@ function ReportPage() {
                 <Input
                   className="report-field"
                   required
+                  maxLength={120}
                   value={location}
-                  onChange={(e) => setLocation(e.target.value)}
+                  onChange={(event) => setLocation(event.target.value)}
                   placeholder="e.g. Central Library, 2nd floor"
                 />
               </Label>
@@ -179,6 +213,18 @@ function ReportPage() {
               </div>
             </div>
 
+            {type === 'FOUND' && (
+              <OwnershipQuestionField
+                type={type}
+                isNew
+                value={ownershipQuestion}
+                onChange={setOwnershipQuestion}
+                onValidityChange={setQuestionValidity}
+              />
+            )}
+
+            <PhotoField value={photo} onChange={setPhoto} disabled={mutation.isPending} />
+
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
@@ -189,9 +235,9 @@ function ReportPage() {
               <Button
                 className="h-10 rounded-lg px-6"
                 type="submit"
-                disabled={mutation.isPending}
+                disabled={mutation.isPending || !questionValidity.valid}
               >
-                {mutation.isPending ? 'Posting…' : 'Post item'}
+                {mutation.isPending ? 'Posting…' : 'Post report'}
               </Button>
               <Button
                 variant="outline"

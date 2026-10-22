@@ -1,10 +1,17 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Button } from '#/components/ui/button.tsx'
+import { NotificationBell } from '#/features/notifications'
 import { useAuth } from '../lib/auth'
 import ThemeToggle from './ThemeToggle'
 
 export default function Header() {
   const { user, hydrated, logout } = useAuth()
+  const navigate = useNavigate()
+
+  async function onLogout() {
+    await logout()
+    await navigate({ to: '/' })
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-[var(--background)] px-4">
@@ -60,13 +67,14 @@ export default function Header() {
         <div className="ml-auto flex items-center gap-2 text-sm font-semibold">
           {hydrated && user ? (
             <>
+              <NotificationBell />
               <span className="hidden text-[var(--muted-foreground)] lg:inline">
                 {user.name}
               </span>
               <Button
                 variant="outline"
                 size="lg"
-                onClick={logout}
+                onClick={() => void onLogout()}
                 className="h-9 rounded-lg px-3 text-xs"
               >
                 Log out
