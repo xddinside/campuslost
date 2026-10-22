@@ -13,7 +13,25 @@ import java.util.Optional;
 
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
-    Optional<Notification> findByIdAndRecipientId(Long id, Long recipientId);
+    @Query("""
+            select n from Notification n
+            where n.id = :id
+              and n.recipientId = :recipientId
+              and n.active = true
+              and (n.type <> :matchType
+                   or (exists (select 1 from Item l
+                               where l.id = n.lostItemId
+                                 and l.deletedAt is null
+                                 and l.status = :openStatus)
+                       and exists (select 1 from Item f
+                                   where f.id = n.foundItemId
+                                     and f.deletedAt is null
+                                     and f.status = :openStatus)))
+            """)
+    Optional<Notification> findVisibleByIdAndRecipientId(@Param("id") Long id,
+                                                          @Param("recipientId") Long recipientId,
+                                                          @Param("matchType") NotificationType matchType,
+                                                          @Param("openStatus") ItemStatus openStatus);
 
     /**
      * A match alert is visible only while both reports are still public and
@@ -68,14 +86,24 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     List<Notification> findMatchRowsForSource(@Param("type") NotificationType type,
                                               @Param("itemId") Long itemId);
 
+    @Query(value = """
+            update notifications
+            set read_at = :readAt
+            where recipient_id = :recipientId
+              and active = true
+              and read_at is null
+              and created_at <= :cutoff
+              and (type <> 'MATCH_FOUND'
+                   or (exists (select 1 from items l
+                               where l.id = notifications.lost_item_id
+                                 and l.deleted_at is null
+                                 and l.status = 'OPEN')
+                       and exists (select 1 from items f
+                                   where f.id = notifications.found_item_id
+                                     and f.deleted_at is null
+                                     and f.status = 'OPEN')))
+            """, nativeQuery = true)
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("""
-            update Notification n
-            set n.readAt = :readAt
-            where n.recipientId = :recipientId
-              and n.readAt is null
-              and n.createdAt <= :cutoff
-            """)
     int markAllRead(@Param("recipientId") Long recipientId,
                     @Param("readAt") Instant readAt,
                     @Param("cutoff") Instant cutoff);

@@ -81,6 +81,13 @@ public class NotificationService {
             if (candidate == null) {
                 continue;
             }
+            if (candidate.lostItemId() == null
+                    || candidate.foundItemId() == null
+                    || Objects.equals(candidate.lostItemId(), candidate.foundItemId())) {
+                // Ignore malformed entries without allowing them to abort a
+                // valid pair later in the same snapshot.
+                continue;
+            }
             boolean touchesSource = Objects.equals(candidate.lostItemId(), event.itemId())
                     || Objects.equals(candidate.foundItemId(), event.itemId());
             if (!touchesSource || candidate.score() < MIN_MATCH_SCORE) {
@@ -90,7 +97,9 @@ public class NotificationService {
             Item lost = items.findById(candidate.lostItemId()).orElse(null);
             Item found = items.findById(candidate.foundItemId()).orElse(null);
             if (!eligible(lost, candidate.lostItemVersion())
-                    || !eligible(found, candidate.foundItemVersion())) {
+                    || !eligible(found, candidate.foundItemVersion())
+                    || lost.getType() != ItemType.LOST
+                    || found.getType() != ItemType.FOUND) {
                 continue;
             }
 
@@ -137,17 +146,26 @@ public class NotificationService {
             return;
         }
         Claim claim = claims.findById(event.claimId()).orElse(null);
-        if (claim == null || claim.getStatus() != event.status()) {
-            // The claim moved on before this listener ran; do not send a stale alert.
+        if (claim == null || event.itemId() == null || event.itemType() == null
+                || event.claimantId() == null || event.reporterId() == null) {
             return;
         }
-        if (event.handoverVerified() && !claim.isHandoverVerified()) {
-            return;
-        }
-
         Item item = claim.getItem();
         Long claimantId = claim.getClaimant().getId();
         Long reporterId = item.getReporter().getId();
+        Long lostReportId = claim.getLostReport() == null ? null : claim.getLostReport().getId();
+        if (!Objects.equals(item.getId(), event.itemId())
+                || item.getType() != event.itemType()
+                || !Objects.equals(claimantId, event.claimantId())
+                || !Objects.equals(reporterId, event.reporterId())
+                || !Objects.equals(lostReportId, event.lostReportId())) {
+            return;
+        }
+        if (event.handoverVerified()
+                && (event.status() != ClaimStatus.COMPLETED || !claim.isHandoverVerified())) {
+            return;
+        }
+
         String title = item.getTitle();
 
         switch (event.status()) {
@@ -170,7 +188,7 @@ public class NotificationService {
                 } else if (item.getType() == ItemType.LOST) {
                     // A response to a lost report is resolved directly by its author.
                     deliverClaim(claim, claimantId, NotificationType.CLAIM_APPROVED,
-                            "approved", "Response accepted",
+                            "completed", "Response accepted",
                             "The reporter of \"" + title
                                     + "\" accepted your response and marked the report resolved.");
                 }
@@ -211,7 +229,8 @@ public class NotificationService {
     @Transactional
     public NotificationResponse markRead(User user, Long notificationId) {
         Notification notification = notifications
-                .findByIdAndRecipientId(notificationId, user.getId())
+                .findVisibleByIdAndRecipientId(notificationId, user.getId(),
+                        NotificationType.MATCH_FOUND, ItemStatus.OPEN)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
                         "Notification not found."));
         if (notification.getReadAt() == null) {
@@ -227,6 +246,7 @@ public class NotificationService {
     public UnreadCountResponse markAllRead(User user) {
         Instant now = Instant.now();
         // The cutoff keeps a notification committed after this moment unread.
+        // Match rows use the same visibility rule as list, count, and read-one.
         notifications.markAllRead(user.getId(), now, now);
         return new UnreadCountResponse(0);
     }

@@ -207,7 +207,13 @@ function NotificationRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-start gap-2">
-          <span className={`min-w-0 text-sm ${unread ? 'font-bold' : 'font-semibold text-muted-foreground'}`}>
+          <span
+            className={`min-w-0 text-sm ${
+              unread
+                ? 'font-bold text-[var(--foreground)]'
+                : 'font-semibold text-muted-foreground'
+            }`}
+          >
             {notification.title}
           </span>
           {unread && (
