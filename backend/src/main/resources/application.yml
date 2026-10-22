@@ -44,7 +44,7 @@ app:
     secret: ${JWT_SECRET:}
     expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://campuslost.localhost}
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,http://campuslost.localhost,https://campuslost.localhost}
   photos:
     directory: ${APP_PHOTOS_DIR:uploads}
     max-bytes: 5242880

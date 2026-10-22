@@ -241,7 +241,8 @@ class MatchingApiTest {
                         .header("Authorization", bearer(alice))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"That is my bottle, it has a campus sticker inside.\",\"lostReportId\":"
-                                + lost.get("id").asLong() + "}"))
+                                + lost.get("id").asLong()
+                                + ",\"ownershipAnswer\":\"It has my name sticker inside the cap.\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         long claimId = objectMapper.readTree(claimResult.getResponse().getContentAsString())
@@ -490,6 +491,11 @@ class MatchingApiTest {
     private JsonNode postItem(User user, ItemType type, String title, String description,
                               String category, String location, Instant occurred,
                               String ownershipQuestion) throws Exception {
+        // FOUND reports now require an ownership question once the ownership
+        // feature is installed; LOST reports must not carry one.
+        if (ownershipQuestion == null && type == ItemType.FOUND) {
+            ownershipQuestion = "What identifying detail would only the owner know?";
+        }
         String question = ownershipQuestion == null
                 ? ""
                 : ",\"ownershipQuestion\":" + objectMapper.writeValueAsString(ownershipQuestion);
