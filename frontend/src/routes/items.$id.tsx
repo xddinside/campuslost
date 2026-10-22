@@ -713,9 +713,6 @@ function ClaimCard({
 
         <div className="mt-3 grid gap-3">
           <ContactPanel claim={claim} userId={userId} />
-          {claim.status === 'APPROVED' && item.type === 'FOUND' && (
-            <ReleaseControl claim={claim} />
-          )}
           {item.type === 'FOUND' && (claim.status === 'APPROVED' || claim.status === 'COMPLETED') && (
             <HandoverPanel
               claim={claim}
@@ -726,59 +723,5 @@ function ClaimCard({
         </div>
       </CardContent>
     </Card>
-  )
-}
-
-function ReleaseControl({ claim }: { claim: Claim }) {
-  const queryClient = useQueryClient()
-  const [reason, setReason] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const release = useMutation({
-    mutationFn: () => api<Claim>(`/claims/${claim.id}/release`, {
-      method: 'POST',
-      body: JSON.stringify({ reason: reason.trim() || undefined }),
-    }),
-    onSuccess: async () => { await invalidateWorkflow(queryClient) },
-    onError: (err) => setError((err as Error).message),
-  })
-
-  return (
-    <div className="grid gap-2">
-      <AlertDialog>
-        <AlertDialogTrigger
-          render={
-            <Button variant="outline" size="sm" disabled={release.isPending}>
-              Release reservation
-            </Button>
-          }
-        />
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Release this pickup?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The claim becomes cancelled, the report and any linked lost report reopen,
-              and contact details are hidden again.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor={`release-${claim.id}`}>Reason (optional)</Label>
-            <Textarea
-              id={`release-${claim.id}`}
-              value={reason}
-              maxLength={500}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Couldn’t verify ownership, owner stopped responding…"
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep reservation</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => release.mutate()}>
-              Release
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {error && <p className="m-0 text-xs text-destructive">{error}</p>}
-    </div>
   )
 }
