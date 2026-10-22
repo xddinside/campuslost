@@ -145,6 +145,13 @@ function ClaimHistoryCard({ claim, userId }: { claim: Claim; userId: number }) {
         <p className="m-0 text-sm text-[var(--muted-foreground)]">
           {noun} on “{claim.itemTitle}” · {timeAgo(claim.createdAt)}
         </p>
+        <Link
+          to="/items/$id"
+          params={{ id: String(claim.itemId) }}
+          className="mt-1 inline-block text-xs font-bold no-underline"
+        >
+          View report →
+        </Link>
         <p>{detail}</p>
         <blockquote>{claim.message}</blockquote>
         <div className="mt-3 grid gap-3">
