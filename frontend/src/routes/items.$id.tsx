@@ -100,6 +100,9 @@ function ItemDetailPage() {
 
   const canClaim = Boolean(hydrated && user && !canManage && !activeClaim && item.status === 'OPEN')
   const occurredLabel = item.type === 'LOST' ? 'Lost on' : 'Found on'
+  const authReturnTo = lostReportId && item.type === 'FOUND'
+    ? `/items/${item.id}?lostReportId=${lostReportId}`
+    : `/items/${item.id}`
 
   return (
     <main className="demo-page item-detail-page">
@@ -192,11 +195,14 @@ function ItemDetailPage() {
                     </p>
                     <div className="flex flex-wrap gap-3">
                       <Button
-                        render={<Link to="/login" search={{ redirect: `/items/${item.id}` }} />}
+                        render={<Link to="/login" search={{ redirect: authReturnTo }} />}
                       >
                         {item.type === 'LOST' ? 'Log in to respond' : 'Log in to claim'}
                       </Button>
-                      <Button render={<Link to="/register" />} variant="outline">
+                      <Button
+                        render={<Link to="/register" search={{ redirect: authReturnTo }} />}
+                        variant="outline"
+                      >
                         Create account
                       </Button>
                     </div>
