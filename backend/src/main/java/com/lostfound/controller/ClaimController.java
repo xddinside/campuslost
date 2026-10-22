@@ -1,8 +1,6 @@
 package com.lostfound.controller;
 
-import com.lostfound.dto.ClaimDecisionRequest;
-import com.lostfound.dto.ClaimRequest;
-import com.lostfound.dto.ClaimResponse;
+import com.lostfound.dto.*;
 import com.lostfound.model.User;
 import com.lostfound.service.ClaimService;
 import jakarta.validation.Valid;
@@ -53,5 +51,18 @@ public class ClaimController {
                                 @PathVariable Long claimId,
                                 @Valid @RequestBody ClaimDecisionRequest request) {
         return claimService.decide(user, claimId, request);
+    }
+
+    @PostMapping("/claims/{claimId}/release")
+    public ClaimResponse release(@AuthenticationPrincipal User user,
+                                 @PathVariable Long claimId,
+                                 @Valid @RequestBody ReleaseRequest request) {
+        return claimService.release(user, claimId, request.reason());
+    }
+
+    @GetMapping("/claims/{claimId}/contact")
+    public ContactResponse contact(@AuthenticationPrincipal User user,
+                                   @PathVariable Long claimId) {
+        return claimService.contact(user, claimId);
     }
 }

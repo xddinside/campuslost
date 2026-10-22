@@ -28,6 +28,12 @@ public record ItemRequest(
         String location,
 
         @NotNull(message = "Date is required")
-        Instant dateOccurred
+        Instant dateOccurred,
+
+        @Size(max = 200, message = "Ownership question must be at most 200 characters")
+        String ownershipQuestion,
+
+        @Size(max = 36, message = "Photo reference is invalid")
+        String photoId
 ) {
 }

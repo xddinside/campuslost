@@ -1,8 +1,11 @@
 package com.lostfound.controller;
 
+import com.lostfound.dto.ItemEditResponse;
+import com.lostfound.dto.ItemPatchRequest;
 import com.lostfound.dto.ItemRequest;
 import com.lostfound.dto.ItemResponse;
 import com.lostfound.dto.StatusRequest;
+import com.lostfound.model.ItemStatus;
 import com.lostfound.model.ItemType;
 import com.lostfound.model.User;
 import com.lostfound.service.ItemService;
@@ -25,10 +28,11 @@ public class ItemController {
 
     @GetMapping
     public List<ItemResponse> list(@RequestParam(required = false) ItemType type,
+                                   @RequestParam(required = false) ItemStatus status,
                                    @RequestParam(required = false) String category,
                                    @RequestParam(required = false) String location,
                                    @RequestParam(required = false) String q) {
-        return itemService.list(type, category, location, q);
+        return itemService.list(type, status, category, location, q);
     }
 
     @GetMapping("/{id}")
@@ -36,11 +40,23 @@ public class ItemController {
         return itemService.get(id);
     }
 
+    @GetMapping("/{id}/edit")
+    public ItemEditResponse editView(@AuthenticationPrincipal User user, @PathVariable Long id) {
+        return itemService.editView(user, id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ItemResponse create(@AuthenticationPrincipal User user,
                                @Valid @RequestBody ItemRequest request) {
         return itemService.create(user, request);
+    }
+
+    @PatchMapping("/{id}")
+    public ItemResponse update(@AuthenticationPrincipal User user,
+                               @PathVariable Long id,
+                               @Valid @RequestBody ItemPatchRequest request) {
+        return itemService.update(user, id, request);
     }
 
     @PatchMapping("/{id}/status")

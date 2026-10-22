@@ -1,0 +1,4 @@
+# Local demo data only. Never enable this profile in a deployed environment.
+app:
+  demo:
+    seed: true

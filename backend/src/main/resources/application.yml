@@ -1,25 +1,65 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: never
+    include-stacktrace: never
 
 spring:
   application:
-    name: backend
+    name: campuslost-backend
+  config:
+    import: optional:file:./.secrets/local.properties,optional:file:../.secrets/backend.properties
   datasource:
-    url: jdbc:mysql://localhost:3306/lostfound?useUnicode=true&characterEncoding=utf8
-    username: lostfound
-    password: lostfound
+    url: ${DB_URL:jdbc:mariadb://localhost:3306/lostfound?useUnicode=true&characterEncoding=utf8}
+    username: ${DB_USERNAME:lostfound}
+    password: ${DB_PASSWORD:lostfound}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Lock-then-reread workflows need each statement to see committed rows.
+      # MariaDB's default REPEATABLE READ raises "record has changed since last
+      # read" when SELECT ... FOR UPDATE follows an earlier snapshot read.
+      transaction-isolation: TRANSACTION_READ_COMMITTED
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     open-in-view: false
-    database-platform: org.hibernate.dialect.MariaDBDialect
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
+    validate-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 6MB
+      max-request-size: 7MB
 
 app:
   jwt:
-    secret: "c2VjcmV0LWtleS1sb3N0LWFuZC1mb3VuZC1kZW1vLTIwMjYtc2VjcmV0LWtleS1sb3N0LWFuZC1mb3VuZC1kZW1vLTIwMjY="
-    expiration-ms: 86400000
+    secret: ${JWT_SECRET:}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
   cors:
-    allowed-origins: http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://127.0.0.1:3000,https://campuslost.localhost}
+  photos:
+    directory: ${APP_PHOTOS_DIR:uploads}
+    max-bytes: 5242880
+    max-uploads-per-day: 20
+  rate-limit:
+    login-attempts: ${APP_LOGIN_RATE_LIMIT:10}
+    login-window-seconds: 60
+    register-attempts: ${APP_REGISTER_RATE_LIMIT:5}
+    register-window-seconds: 300
+  demo:
+    seed: false
+  handover:
+    hmac-secret: ${APP_HANDOVER_HMAC_SECRET:}
+
+logging:
+  level:
+    root: INFO
+    com.lostfound: INFO

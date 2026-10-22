@@ -5,6 +5,10 @@ import com.lostfound.model.ItemType;
 
 import java.time.Instant;
 
+/**
+ * Public item shape. Intentionally contains no email, phone, ownership
+ * question/answer, or claimant data.
+ */
 public record ItemResponse(
         Long id,
         ItemType type,
@@ -16,10 +20,11 @@ public record ItemResponse(
         ItemStatus status,
         Long reporterId,
         String reporterName,
-        String reporterEmail,
-        String reporterPhone,
         Instant createdAt,
+        Instant updatedAt,
         Instant resolvedAt,
+        long version,
+        String photoUrl,
         long pendingClaims
 ) {
 }

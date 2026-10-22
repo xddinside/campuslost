@@ -24,24 +24,29 @@ public class AuthService {
     }
 
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email().toLowerCase())) {
-            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        String email = request.email().trim().toLowerCase();
+        if (userRepository.existsByEmail(email)) {
+            throw new ApiException(HttpStatus.CONFLICT, "EMAIL_IN_USE",
+                    "An account with this email already exists");
         }
         User user = new User();
         user.setName(request.name().trim());
-        user.setEmail(request.email().toLowerCase().trim());
+        user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setPhone(request.phone() != null ? request.phone().trim() : null);
+        String phone = request.phone() == null ? null : request.phone().trim();
+        user.setPhone(phone == null || phone.isEmpty() ? null : phone);
         user.setRole(Role.USER);
         userRepository.save(user);
         return toAuthResponse(user);
     }
 
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email().toLowerCase().trim())
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
+        User user = userRepository.findByEmail(request.email().trim().toLowerCase())
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS",
+                        "Invalid email or password"));
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password");
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS",
+                    "Invalid email or password");
         }
         return toAuthResponse(user);
     }
