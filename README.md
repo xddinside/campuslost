@@ -75,22 +75,16 @@ Automatic baseline-on-migrate is off: an existing database that has no
 altered. To adopt such a database deliberately, once:
 
 ```bash
-# 1. Back up.
-mariadb-dump -uroot lostfound > backup.sql
-
-# 2. Confirm the schema is the pre-Flyway one the adoption expects, then run
-#    a one-off boot that baselines it at V1 and applies all later migrations.
-SPRING_FLYWAY_BASELINE_ON_MIGRATE=true scripts/dev-backend.sh
-
-# 3. Verify preserved data before putting the app back up.
-mariadb -ulostfound -plostfound lostfound \
-  -e "SELECT COUNT(*) AS users FROM users; SELECT COUNT(*) AS items FROM items; \
-      SELECT COUNT(*) AS claims FROM claims; \
-      SELECT MAX(version) FROM flyway_schema_history;"
+scripts/adopt-legacy-db.sh lostfound
 ```
 
-Compare those counts with the pre-migration backup. Normal startups afterwards
-need no flag — the schema history table exists by then.
+The script performs the checked path end to end: it dumps a backup, verifies
+the schema is exactly the expected legacy shape (`users`, `items`, `claims`,
+and no `flyway_schema_history`), records row counts and id ranges before the
+migration, runs one boot with `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true`, then
+re-runs the same checks afterwards so any lost or renumbered rows surface
+immediately. `PopulatedUpgradeTest` keeps this upgrade path pinned in CI on a
+populated schema. Normal startups afterwards need no flag.
 
 ## API overview
 
