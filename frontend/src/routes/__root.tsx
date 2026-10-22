@@ -1,4 +1,4 @@
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
+import { HeadContent, Link, Scripts, createRootRoute } from '@tanstack/react-router'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
@@ -24,7 +24,22 @@ export const Route = createRootRoute({
     links: [{ rel: 'stylesheet', href: appCss }],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFound,
 })
+
+function NotFound() {
+  return (
+    <main className="demo-page demo-center">
+      <h1 className="demo-title mb-2">Page not found</h1>
+      <p className="mb-6 text-sm text-muted-foreground">
+        That page doesn’t exist. It may have been moved or the link is wrong.
+      </p>
+      <Link to="/" className="nav-link is-active">
+        Back to browse
+      </Link>
+    </main>
+  )
+}
 
 function RootDocument({ children }: { children: ReactNode }) {
   // One client per SSR request; the browser reuses the same instance.
