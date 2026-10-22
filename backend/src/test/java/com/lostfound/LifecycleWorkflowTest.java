@@ -142,6 +142,107 @@ class LifecycleWorkflowTest {
     }
 
     @Test
+    void simultaneousApprovalsOnSharedLostReportAllowExactlyOneWinner() throws Exception {
+        // Same competition as above, but raced instead of sequential: the
+        // reservation slot on the shared lost report must admit one approval.
+        Item lost = fixtures.item(bob, ItemType.LOST, ItemStatus.OPEN, "Shared lost headphones");
+        Item foundA = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Found headphones A");
+        Item foundB = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Found headphones B");
+        Claim claimA = workflow.create(bob, foundA.getId(), request("Mine, serial 111", lost.getId()));
+        Claim claimB = workflow.create(bob, foundB.getId(), request("Mine, serial 222", lost.getId()));
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        Future<String> approveA = pool.submit(() -> {
+            start.await(5, TimeUnit.SECONDS);
+            return decideOutcome(claimA.getId());
+        });
+        Future<String> approveB = pool.submit(() -> {
+            start.await(5, TimeUnit.SECONDS);
+            return decideOutcome(claimB.getId());
+        });
+        start.countDown();
+        List<String> outcomes = List.of(approveA.get(20, TimeUnit.SECONDS),
+                approveB.get(20, TimeUnit.SECONDS));
+        pool.shutdownNow();
+
+        assertThat(outcomes).containsExactlyInAnyOrder("OK", "CONFLICT");
+        assertThat(items.findById(lost.getId()).orElseThrow().getStatus()).isEqualTo(ItemStatus.RESERVED);
+        assertThat(claims.findById(claimA.getId()).orElseThrow().getStatus())
+                .isIn(ClaimStatus.APPROVED, ClaimStatus.REJECTED);
+        assertThat(claims.findById(claimB.getId()).orElseThrow().getStatus())
+                .isIn(ClaimStatus.APPROVED, ClaimStatus.REJECTED);
+        int approved = (int) List.of(claimA.getId(), claimB.getId()).stream()
+                .map(id -> claims.findById(id).orElseThrow().getStatus())
+                .filter(s -> s == ClaimStatus.APPROVED)
+                .count();
+        assertThat(approved).isEqualTo(1);
+    }
+
+    @Test
+    void duplicateCreateVersusApproveKeepsOneLockOrder() throws Exception {
+        // The old create order locked the target first and the linked report
+        // second; approval locks both ascending. Racing a duplicate create
+        // (which reaches both locks before its duplicate check) against an
+        // approval of the same pair is the deadlock window.
+        List<String> outcomes = new CopyOnWriteArrayList<>();
+        for (int round = 0; round < 8; round++) {
+            Item lost = fixtures.item(bob, ItemType.LOST, ItemStatus.OPEN, "Linked lost " + round);
+            Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Linked found " + round);
+            Claim pending = workflow.create(bob, found.getId(),
+                    request("Mine, unique detail " + round, lost.getId()));
+
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            pool.submit(() -> {
+                start.await(5, TimeUnit.SECONDS);
+                outcomes.add(decideOutcome(pending.getId()));
+                return null;
+            });
+            pool.submit(() -> {
+                start.await(5, TimeUnit.SECONDS);
+                outcomes.add(createOutcome(bob, found.getId(), lost.getId()));
+                return null;
+            });
+            start.countDown();
+            pool.shutdown();
+            assertThat(pool.awaitTermination(30, TimeUnit.SECONDS))
+                    .as("create vs approve must never deadlock (round %d)", round)
+                    .isTrue();
+        }
+        assertThat(outcomes).hasSize(16).allSatisfy(o -> assertThat(o).isIn("OK", "CONFLICT"));
+    }
+
+    private String createOutcome(User claimant, Long itemId, Long lostReportId) {
+        try {
+            workflow.create(claimant, itemId, request("A second detail-rich response.", lostReportId));
+            return "OK";
+        } catch (ApiException ex) {
+            return ex.getStatus().value() == 409 ? "CONFLICT" : "ERROR_" + ex.getCode();
+        }
+    }
+
+    @Test
+    void reopenedLostReportCanCompleteANewResponse() {
+        // A response approval resolves the report; reopening it must not trip
+        // the reservation unique keys when a later response is approved.
+        Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Reopenable lost item");
+        Claim first = fixtures.claim(lost, bob, ClaimStatus.PENDING);
+        workflow.decide(alice, first.getId(), ClaimStatus.APPROVED);
+        assertThat(items.findById(lost.getId()).orElseThrow().getStatus()).isEqualTo(ItemStatus.RESOLVED);
+        assertThat(claims.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(ClaimStatus.COMPLETED);
+
+        itemService.updateStatus(alice, lost.getId(), ItemStatus.OPEN);
+
+        Claim second = workflow.create(stranger, lost.getId(), request("I found it again, really.", null));
+        workflow.decide(alice, second.getId(), ClaimStatus.APPROVED);
+
+        assertThat(items.findById(lost.getId()).orElseThrow().getStatus()).isEqualTo(ItemStatus.RESOLVED);
+        assertThat(claims.findById(second.getId()).orElseThrow().getStatus()).isEqualTo(ClaimStatus.COMPLETED);
+        assertThat(claims.findById(first.getId()).orElseThrow().getStatus()).isEqualTo(ClaimStatus.COMPLETED);
+    }
+
+    @Test
     void twoCompetingFoundReportsCannotBothReserveSameLostReport() {
         Item lost = fixtures.item(bob, ItemType.LOST, ItemStatus.OPEN, "Lost headphones");
         Item foundA = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Found headphones A");

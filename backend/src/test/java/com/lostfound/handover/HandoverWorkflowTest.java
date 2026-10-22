@@ -465,6 +465,26 @@ class HandoverWorkflowTest {
     }
 
     @Test
+    void adminClaimantCannotVerifyOrReleaseTheirOwnPickup() {
+        Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Found laptop");
+        Claim claim = approvedFoundClaim(found, admin, null);
+        CODES.use("246810");
+        HandoverCodeResponse issued = handover.issue(admin, claim.getId());
+
+        // Administrator privileges never let someone verify their own claim.
+        ApiException selfVerify = apiError(() -> handover.verify(admin, claim.getId(), issued.code()));
+        assertThat(selfVerify.getStatus().value()).isEqualTo(403);
+
+        ApiException selfRelease = apiError(() ->
+                handover.release(admin, claim.getId(), "I changed my mind"));
+        assertThat(selfRelease.getStatus().value()).isEqualTo(403);
+
+        // The reporter's legitimate verify still completes the same claim.
+        assertThat(handover.verify(alice, claim.getId(), issued.code()).claim().status())
+                .isEqualTo(ClaimStatus.COMPLETED);
+    }
+
+    @Test
     void twoSimultaneousCorrectVerifiesProduceOneTransitionAndOneEvent() throws Exception {
         Item lost = fixtures.item(bob, ItemType.LOST, ItemStatus.OPEN, "Lost bag");
         Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Found bag");

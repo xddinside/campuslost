@@ -18,6 +18,9 @@ import com.lostfound.repository.UserRepository;
 import com.lostfound.security.JwtService;
 import com.lostfound.support.CleanFlywayConfig;
 import com.lostfound.support.TestFixtures;
+import com.lostfound.handover.HandoverChallengeRepository;
+import com.lostfound.handover.HandoverCodeResponse;
+import com.lostfound.handover.HandoverService;
 import com.lostfound.workflow.ClaimWorkflow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +35,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
@@ -71,6 +80,10 @@ class NotificationApiTest {
     NotificationService service;
     @Autowired
     ClaimWorkflow workflow;
+    @Autowired
+    HandoverService handover;
+    @Autowired
+    HandoverChallengeRepository challenges;
 
     TestFixtures fixtures;
     User alice;
@@ -80,6 +93,7 @@ class NotificationApiTest {
     @BeforeEach
     void setUp() {
         fixtures = new TestFixtures(users, items, claims, photos, encoder);
+        challenges.deleteAll();
         notifications.deleteAll();
         fixtures.reset();
         alice = fixtures.user("Alice", Role.USER);
@@ -335,6 +349,60 @@ class NotificationApiTest {
                     .andExpect(jsonPath("$.notifications[0].type").value("HANDOVER_COMPLETED"))
                     .andExpect(jsonPath("$.notifications[0].claimId").value(claim.getId()))
                     .andExpect(jsonPath("$.notifications[0].itemId").value(found.getId()));
+        }
+    }
+
+    @Test
+    void concurrentReadCallsSetReadAtOnceAndNeverFail() throws Exception {
+        Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Notebook");
+        Claim claim = fixtures.claim(found, bob, ClaimStatus.APPROVED);
+        service.handleClaimChanged(claimEvent(claim));
+        Long notificationId = notifications.findVisiblePage(bob.getId(), null,
+                        NotificationType.MATCH_FOUND, ItemStatus.OPEN,
+                        org.springframework.data.domain.PageRequest.of(0, 10))
+                .getFirst().getId();
+
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Integer>> attempts = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            attempts.add(pool.submit(() -> {
+                start.await(5, TimeUnit.SECONDS);
+                return mvc.perform(patch("/api/me/notifications/" + notificationId + "/read")
+                                .header("Authorization", bearer(bob)))
+                        .andReturn().getResponse().getStatus();
+            }));
+        }
+        start.countDown();
+        for (Future<Integer> attempt : attempts) {
+            assertThat(attempt.get(20, TimeUnit.SECONDS)).isEqualTo(200);
+        }
+        pool.shutdownNow();
+
+        Notification stored = notifications.findById(notificationId).orElseThrow();
+        assertThat(stored.getReadAt()).isNotNull();
+        mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
+                .andExpect(jsonPath("$.unreadCount").value(0))
+                .andExpect(jsonPath("$.notifications[0].readAt").exists());
+    }
+
+    @Test
+    void verifiedPickupDeliversCompletionToBothInboxes() throws Exception {
+        // End-to-end delivery: the completion notification must arrive because
+        // of a real code verification, not a directly-set flag.
+        Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Found campus card");
+        Claim claim = workflow.create(bob, found.getId(),
+                new ClaimRequest("It is mine; the photo matches my card.", null, null));
+        workflow.decide(alice, claim.getId(), ClaimStatus.APPROVED);
+        HandoverCodeResponse issued = handover.issue(bob, claim.getId());
+        handover.verify(alice, claim.getId(), issued.code());
+
+        for (User participant : List.of(alice, bob)) {
+            mvc.perform(get("/api/me/notifications")
+                            .header("Authorization", bearer(participant)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.notifications[0].type").value("HANDOVER_COMPLETED"))
+                    .andExpect(jsonPath("$.notifications[0].claimId").value(claim.getId()));
         }
     }
 

@@ -17,6 +17,7 @@ import { queryKeys } from '../../lib/query'
 import type { NotificationBellProps } from '../../lib/feature-contracts'
 import type { NotificationItem, NotificationPage, NotificationType } from './types'
 import { NOTIFICATIONS_PAGE_SIZE, NOTIFICATIONS_POLL_MS } from './types'
+import { notificationLinkTarget } from './target'
 
 interface UnreadCountResponse {
   unreadCount: number
@@ -239,49 +240,12 @@ function NotificationRow({
     </>
   )
 
-  if (!notification.itemId) {
-    return (
-      <Link to="/my" onClick={onOpen} className={className}>
-        {content}
-      </Link>
-    )
-  }
-
-  // Claim status alerts open that claim's history on the report — completed
-  // and rejected claims are not active claims, so they need their own
-  // destination instead of the default claim panel.
-  if (notification.claimId) {
-    return (
-      <Link
-        to="/items/$id"
-        params={{ id: String(notification.itemId) }}
-        search={{ claimId: notification.claimId }}
-        onClick={onOpen}
-        className={className}
-      >
-        {content}
-      </Link>
-    )
-  }
-
-  if (notification.type === 'MATCH_FOUND' && notification.lostReportId) {
-    return (
-      <Link
-        to="/items/$id"
-        params={{ id: String(notification.itemId) }}
-        search={{ lostReportId: notification.lostReportId }}
-        onClick={onOpen}
-        className={className}
-      >
-        {content}
-      </Link>
-    )
-  }
-
+  const target = notificationLinkTarget(notification)
   return (
     <Link
-      to="/items/$id"
-      params={{ id: String(notification.itemId) }}
+      to={target.to}
+      params={target.params}
+      search={target.search}
       onClick={onOpen}
       className={className}
     >

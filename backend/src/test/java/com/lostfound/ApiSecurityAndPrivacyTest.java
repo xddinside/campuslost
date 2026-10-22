@@ -6,6 +6,7 @@ import com.lostfound.repository.ItemRepository;
 import com.lostfound.repository.PhotoRepository;
 import com.lostfound.repository.UserRepository;
 import com.lostfound.security.JwtService;
+import com.lostfound.service.ItemService;
 import com.lostfound.support.CleanFlywayConfig;
 import com.lostfound.support.TestFixtures;
 import io.jsonwebtoken.Jwts;
@@ -59,6 +60,8 @@ class ApiSecurityAndPrivacyTest {
     PasswordEncoder encoder;
     @Autowired
     JwtService jwtService;
+    @Autowired
+    ItemService itemService;
     @Autowired
     ObjectMapper objectMapper;
     @Value("${app.jwt.secret}")
@@ -164,6 +167,142 @@ class ApiSecurityAndPrivacyTest {
         mvc.perform(post("/api/admin/photos/cleanup").header("Authorization", bearer(bob)))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void oversizedOverdimensionedAndTraversalUploadsAreHandled() throws Exception {
+        // Byte-size cap.
+        byte[] huge = new byte[5 * 1024 * 1024 + 1];
+        mvc.perform(multipart("/api/photos")
+                        .file(new MockMultipartFile("file", "big.png", "image/png", huge))
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.code").value("FILE_TOO_LARGE"));
+
+        // A tiny compressed file whose header declares a huge canvas must be
+        // rejected from the header alone, without decoding pixels.
+        byte[] declaredBomb = pngWithDeclaredSize(30_000, 30_000);
+        mvc.perform(multipart("/api/photos")
+                        .file(new MockMultipartFile("file", "bomb.png", "image/png", declaredBomb))
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_PHOTO"));
+
+        // A traversal filename never reaches storage: the stored name is
+        // generated, and the file lands under the photos root.
+        byte[] png = pngBytes();
+        mvc.perform(multipart("/api/photos")
+                        .file(new MockMultipartFile("file", "../../escape.png", "image/png", png))
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.url", containsString("/api/photos/")));
+        org.assertj.core.api.Assertions.assertThat(photos.findAll())
+                .allSatisfy(photo -> org.assertj.core.api.Assertions.assertThat(photo.getStorageName())
+                        .doesNotContain("/").doesNotContain("..").endsWith(".png"));
+    }
+
+    /**
+     * Builds a syntactically valid PNG whose IHDR declares the given canvas
+     * size, with a correct chunk CRC, so only the header matters.
+     */
+    private byte[] pngWithDeclaredSize(int width, int height) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(new byte[]{(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A});
+        out.write(new byte[]{0, 0, 0, 13});
+        byte[] chunk = new ByteArrayOutputStream() {{
+            write("IHDR".getBytes());
+            write(new byte[]{
+                    (byte) (width >>> 24), (byte) (width >>> 16),
+                    (byte) (width >>> 8), (byte) width,
+                    (byte) (height >>> 24), (byte) (height >>> 16),
+                    (byte) (height >>> 8), (byte) height,
+                    8, 2, 0, 0, 0});
+        }}.toByteArray();
+        out.write(chunk);
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(chunk);
+        out.write(new byte[]{(byte) (crc.getValue() >>> 24), (byte) (crc.getValue() >>> 16),
+                (byte) (crc.getValue() >>> 8), (byte) crc.getValue()});
+        return out.toByteArray();
+    }
+
+    @Test
+    void patchEnforcesFieldLengthConstraints() throws Exception {
+        Item item = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Patch target");
+        mvc.perform(patch("/api/items/" + item.getId())
+                        .header("Authorization", bearer(alice))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0,\"description\":\"" + "d".repeat(4001) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        mvc.perform(patch("/api/items/" + item.getId())
+                        .header("Authorization", bearer(alice))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0,\"location\":\"" + "l".repeat(121) + "\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void simultaneousAttachLetsOnlyOneItemClaimThePhoto() throws Exception {
+        MvcResult upload = mvc.perform(multipart("/api/photos")
+                        .file(new MockMultipartFile("file", "photo.png", "image/png", pngBytes()))
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String photoId = objectMapper.readTree(upload.getResponse().getContentAsString())
+                .get("id").asString();
+
+        String itemJson = """
+                {"type":"FOUND","title":"Report %s","description":"A detailed description for this item.",
+                 "category":"Other","location":"Gym","dateOccurred":"2026-01-02T10:00:00Z","photoId":"%s",
+                 "ownershipQuestion":"What colour is the sticker under the lid?"}
+                """;
+        String auth = bearer(alice);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.Callable<Integer> create = () -> {
+            start.await(5, java.util.concurrent.TimeUnit.SECONDS);
+            return mvc.perform(post("/api/items")
+                            .header("Authorization", auth)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(itemJson.formatted(java.util.UUID.randomUUID(), photoId)))
+                    .andReturn().getResponse().getStatus();
+        };
+        java.util.concurrent.Future<Integer> one = pool.submit(create);
+        java.util.concurrent.Future<Integer> two = pool.submit(create);
+        start.countDown();
+        java.util.List<Integer> statuses = java.util.List.of(
+                one.get(20, java.util.concurrent.TimeUnit.SECONDS),
+                two.get(20, java.util.concurrent.TimeUnit.SECONDS));
+        pool.shutdownNow();
+
+        // Exactly one report may claim the upload; the loser gets a clear error
+        // (400 INVALID_PHOTO or a 409 unique-constraint conflict).
+        org.assertj.core.api.Assertions.assertThat(statuses)
+                .contains(201)
+                .anyMatch(s -> s == 400 || s == 409);
+        Photo stored = photos.findById(photoId).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(stored.getAttachedItemId()).isNotNull();
+    }
+
+    @Test
+    void deletedReportStillServesClaimHistoryToItsReporter() throws Exception {
+        Item item = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Later deleted");
+        fixtures.claim(item, bob, ClaimStatus.REJECTED);
+        itemService.delete(alice, item.getId());
+
+        mvc.perform(get("/api/items/" + item.getId() + "/claims")
+                        .header("Authorization", bearer(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].status").value("REJECTED"));
+        mvc.perform(get("/api/items/" + item.getId() + "/claims")
+                        .header("Authorization", bearer(bob)))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/items/" + item.getId() + "/claims")
+                        .header("Authorization", bearer(admin)))
+                .andExpect(status().isOk());
+    }
+
 
     @Test
     void contactIsParticipantOnlyAfterApprovalAndIsNoStore() throws Exception {
