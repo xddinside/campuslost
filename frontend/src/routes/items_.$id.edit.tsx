@@ -241,6 +241,7 @@ function EditForm({ edit }: { edit: ItemEdit }) {
                 isNew={false}
                 value={ownershipQuestion}
                 onChange={setOwnershipQuestion}
+                error={fieldErrors.ownershipQuestion}
                 onValidityChange={setQuestionValidity}
               />
             )}

@@ -219,6 +219,7 @@ function ReportPage() {
                 isNew
                 value={ownershipQuestion}
                 onChange={setOwnershipQuestion}
+                error={fieldErrors.ownershipQuestion}
                 onValidityChange={setQuestionValidity}
               />
             )}

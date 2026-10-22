@@ -345,6 +345,7 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
   const [ownershipAnswer, setOwnershipAnswer] = useState('')
   const [answerValidity, setAnswerValidity] = useState<{ valid: boolean; message?: string }>({ valid: true })
   const [error, setError] = useState<string | null>(null)
+  const [answerError, setAnswerError] = useState<string | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const isLostReport = item.type === 'LOST'
@@ -369,12 +370,16 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
     onError: (err) => {
       const reason = err instanceof ApiError ? err.message : 'Please try again.'
       setError(`Unable to send: ${reason}`)
+      if (err instanceof ApiError && err.fieldErrors?.ownershipAnswer) {
+        setAnswerError(err.fieldErrors.ownershipAnswer)
+      }
     },
   })
 
   function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
+    setAnswerError(null)
     const trimmedMessage = message.trim()
     if (trimmedMessage.length < 10) {
       setValidationError('Write at least 10 characters.')
@@ -454,6 +459,7 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
                 itemId={item.id}
                 value={ownershipAnswer}
                 onChange={setOwnershipAnswer}
+                error={answerError}
                 onValidityChange={setAnswerValidity}
               />
             </div>
