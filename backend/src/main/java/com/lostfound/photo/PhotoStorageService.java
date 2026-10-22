@@ -4,9 +4,12 @@ import com.lostfound.dto.PhotoResponse;
 import com.lostfound.exception.ApiException;
 import com.lostfound.model.Item;
 import com.lostfound.model.Photo;
+import com.lostfound.model.PhotoUpload;
 import com.lostfound.model.User;
 import com.lostfound.repository.ItemRepository;
 import com.lostfound.repository.PhotoRepository;
+import com.lostfound.repository.PhotoUploadRepository;
+import com.lostfound.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +53,8 @@ public class PhotoStorageService {
 
     private final PhotoRepository photoRepository;
     private final ItemRepository itemRepository;
+    private final UserRepository userRepository;
+    private final PhotoUploadRepository photoUploadRepository;
     private final Path root;
     private final long maxBytes;
     private final int maxUploadsPerDay;
@@ -57,11 +62,15 @@ public class PhotoStorageService {
 
     public PhotoStorageService(PhotoRepository photoRepository,
                                ItemRepository itemRepository,
+                               UserRepository userRepository,
+                               PhotoUploadRepository photoUploadRepository,
                                @Value("${app.photos.directory:uploads}") String directory,
                                @Value("${app.photos.max-bytes:5242880}") long maxBytes,
                                @Value("${app.photos.max-uploads-per-day:20}") int maxUploadsPerDay) {
         this.photoRepository = photoRepository;
         this.itemRepository = itemRepository;
+        this.userRepository = userRepository;
+        this.photoUploadRepository = photoUploadRepository;
         this.root = Path.of(directory).toAbsolutePath().normalize();
         this.maxBytes = maxBytes;
         this.maxUploadsPerDay = maxUploadsPerDay;
@@ -101,7 +110,13 @@ public class PhotoStorageService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO_TYPE",
                     "Use a JPEG, PNG, or WebP photo.");
         }
-        if (photoRepository.countByUploaderIdAndCreatedAtAfter(user.getId(),
+        // Serialize the quota check and charge on the uploader's row, and
+        // count the append-only ledger rather than surviving photos: deleting
+        // a photo can never hand allowance back.
+        userRepository.findByIdForUpdate(user.getId())
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED",
+                        "Your session is no longer valid."));
+        if (photoUploadRepository.countByUploaderIdAndCreatedAtAfter(user.getId(),
                 Instant.now().minus(1, ChronoUnit.DAYS)) >= maxUploadsPerDay) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "PHOTO_LIMIT",
                     "You reached today's photo upload limit. Try again tomorrow.");
@@ -109,7 +124,24 @@ public class PhotoStorageService {
 
         // Read dimensions from the image header before allocating any decoded
         // pixels; a compressed file can declare huge dimensions otherwise.
-        BufferedImage image;
+        // The decode permit is held through re-encoding and disposal, since a
+        // decoded image stays live until flushed.
+        boolean jpeg = "image/jpeg".equals(contentType);
+        String storageExtension = jpeg ? "jpg" : "png";
+        String storedType = jpeg ? "image/jpeg" : "image/png";
+        String id = UUID.randomUUID().toString();
+        String storageName = id + "." + storageExtension;
+        Path target = root.resolve(storageName);
+        int imageWidth;
+        int imageHeight;
+        try {
+            DECODE_PERMITS.acquire();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_BUSY",
+                    "Photo processing is busy. Try again.");
+        }
+        BufferedImage image = null;
         try (InputStream in = file.getInputStream();
              ImageInputStream iis = ImageIO.createImageInputStream(in)) {
             if (iis == null) {
@@ -135,45 +167,37 @@ public class PhotoStorageService {
                     throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                             "That photo is too large to process safely.");
                 }
-                try {
-                    DECODE_PERMITS.acquire();
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_BUSY",
-                            "Photo processing is busy. Try again.");
+                image = reader.read(0);
+                if (image == null) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
+                            "That file is not a readable photo.");
                 }
-                try {
-                    image = reader.read(0);
-                } finally {
-                    DECODE_PERMITS.release();
+                // Re-encode decoded pixels so EXIF metadata, GPS, and embedded
+                // payloads never reach storage — still under the permit.
+                if (!ImageIO.write(image, storageExtension, target.toFile())) {
+                    throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "PHOTO_STORAGE_FAILED",
+                            "The photo could not be saved. Try again.");
                 }
+                imageWidth = image.getWidth();
+                imageHeight = image.getHeight();
             } finally {
                 reader.dispose();
             }
         } catch (ApiException ex) {
+            deleteQuietly(target);
             throw ex;
         } catch (IOException | RuntimeException ex) {
+            deleteQuietly(target);
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                     "That file is not a readable photo.");
-        }
-        if (image == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
-                    "That file is not a readable photo.");
+        } finally {
+            if (image != null) {
+                image.flush();
+            }
+            DECODE_PERMITS.release();
         }
 
-        // Re-encode decoded pixels so EXIF metadata, GPS, and embedded payloads
-        // never reach storage.
-        boolean jpeg = "image/jpeg".equals(contentType);
-        String storageExtension = jpeg ? "jpg" : "png";
-        String storedType = jpeg ? "image/jpeg" : "image/png";
-        String id = UUID.randomUUID().toString();
-        String storageName = id + "." + storageExtension;
-        Path target = root.resolve(storageName);
         try {
-            boolean written = ImageIO.write(image, storageExtension, target.toFile());
-            if (!written) {
-                throw new IOException("No image writer for " + storageExtension);
-            }
             long size = Files.size(target);
             if (size > maxBytes) {
                 Files.deleteIfExists(target);
@@ -186,9 +210,13 @@ public class PhotoStorageService {
             photo.setStorageName(storageName);
             photo.setContentType(storedType);
             photo.setSizeBytes(size);
-            photo.setWidth(image.getWidth());
-            photo.setHeight(image.getHeight());
+            photo.setWidth(imageWidth);
+            photo.setHeight(imageHeight);
             photoRepository.save(photo);
+            PhotoUpload charge = new PhotoUpload();
+            charge.setUploader(user);
+            charge.setPhotoId(id);
+            photoUploadRepository.save(charge);
             return new PhotoResponse(id, url(id));
         } catch (ApiException ex) {
             deleteQuietly(target);
@@ -269,8 +297,14 @@ public class PhotoStorageService {
     public int cleanupUnattached(int olderThanHours) {
         int removed = 0;
         List<Path> files = new ArrayList<>();
-        for (Photo photo : photoRepository.findByAttachedItemIdIsNullAndCreatedAtBefore(
-                Instant.now().minus(olderThanHours, ChronoUnit.HOURS))) {
+        Instant cutoff = Instant.now().minus(olderThanHours, ChronoUnit.HOURS);
+        for (Photo candidate : photoRepository.findByAttachedItemIdIsNullAndCreatedAtBefore(cutoff)) {
+            // Lock each row and re-check before deleting: an attach that
+            // committed meanwhile must win instead of tripping the FK.
+            Photo photo = photoRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+            if (photo == null || photo.getAttachedItemId() != null) {
+                continue;
+            }
             Path file = root.resolve(photo.getStorageName()).normalize();
             photoRepository.delete(photo);
             if (file.startsWith(root)) {
