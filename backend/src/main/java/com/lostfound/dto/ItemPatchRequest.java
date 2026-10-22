@@ -20,12 +20,24 @@ public class ItemPatchRequest {
     private Long version;
 
     private ItemType type;
+
+    @Size(max = 120, message = "Title must be at most 120 characters")
     private String title;
+
+    @Size(max = 4000, message = "Description must be at most 4000 characters")
     private String description;
+
+    @Size(max = 60, message = "Category must be at most 60 characters")
     private String category;
+
+    @Size(max = 120, message = "Location must be at most 120 characters")
     private String location;
     private Instant dateOccurred;
+
+    @Size(max = 200, message = "Ownership question must be at most 200 characters")
     private String ownershipQuestion;
+
+    @Size(max = 36, message = "Photo reference is invalid")
     private String photoId;
 
     private boolean typePresent;
@@ -61,7 +73,7 @@ public class ItemPatchRequest {
     }
 
     @JsonSetter("title")
-    public void setTitle(@Size(max = 120, message = "Title must be at most 120 characters") String title) {
+    public void setTitle(String title) {
         this.title = title;
         this.titlePresent = true;
     }
@@ -71,7 +83,7 @@ public class ItemPatchRequest {
     }
 
     @JsonSetter("description")
-    public void setDescription(@Size(max = 4000, message = "Description must be at most 4000 characters") String description) {
+    public void setDescription(String description) {
         this.description = description;
         this.descriptionPresent = true;
     }
@@ -81,7 +93,7 @@ public class ItemPatchRequest {
     }
 
     @JsonSetter("category")
-    public void setCategory(@Size(max = 60, message = "Category must be at most 60 characters") String category) {
+    public void setCategory(String category) {
         this.category = category;
         this.categoryPresent = true;
     }
@@ -91,7 +103,7 @@ public class ItemPatchRequest {
     }
 
     @JsonSetter("location")
-    public void setLocation(@Size(max = 120, message = "Location must be at most 120 characters") String location) {
+    public void setLocation(String location) {
         this.location = location;
         this.locationPresent = true;
     }
@@ -111,7 +123,7 @@ public class ItemPatchRequest {
     }
 
     @JsonSetter("ownershipQuestion")
-    public void setOwnershipQuestion(@Size(max = 200, message = "Ownership question must be at most 200 characters") String ownershipQuestion) {
+    public void setOwnershipQuestion(String ownershipQuestion) {
         this.ownershipQuestion = ownershipQuestion;
         this.ownershipQuestionPresent = true;
     }
@@ -121,7 +133,7 @@ public class ItemPatchRequest {
     }
 
     @JsonSetter("photoId")
-    public void setPhotoId(@Size(max = 36, message = "Photo reference is invalid") String photoId) {
+    public void setPhotoId(String photoId) {
         this.photoId = photoId;
         this.photoIdPresent = true;
     }
