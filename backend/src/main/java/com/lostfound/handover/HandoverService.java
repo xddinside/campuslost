@@ -281,7 +281,8 @@ public class HandoverService {
             if (claim == null) {
                 return null;
             }
-            if (!isReviewer(actor, claim.getItem())) {
+            if (claim.getClaimant().getId().equals(actor.getId())
+                    || !isReviewer(actor, claim.getItem())) {
                 throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
                         "Only the reporter or an administrator can verify this pickup.");
             }

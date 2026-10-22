@@ -62,7 +62,10 @@ public class ClaimWorkflow {
 
     @Transactional
     public Claim create(User claimant, Long itemId, ClaimRequest request) {
-        Item target = lockItem(itemId);
+        // Lock the target and any linked lost report in ascending id order,
+        // the same order approval and handover use, before validating.
+        LockedItems locked = lockItems(itemId, request.lostReportId());
+        Item target = locked.item(itemId);
         requireVisible(target);
         if (target.getStatus() != ItemStatus.OPEN) {
             throw new ApiException(HttpStatus.CONFLICT, "ITEM_NOT_OPEN",
@@ -81,7 +84,7 @@ public class ClaimWorkflow {
         Item lostReport = null;
         if (target.getType() == ItemType.FOUND) {
             if (request.lostReportId() != null) {
-                lostReport = lockItem(request.lostReportId());
+                lostReport = locked.item(request.lostReportId());
                 requireVisible(lostReport);
                 if (lostReport.getType() != ItemType.LOST
                         || lostReport.getStatus() != ItemStatus.OPEN
@@ -272,6 +275,12 @@ public class ClaimWorkflow {
                 .orElseThrow(() -> notFound("Claim not found."));
         Item target = locked.item(claim.getItem().getId());
         Item lost = claim.getLostReport() == null ? null : locked.item(claim.getLostReport().getId());
+        // Reviewer privileges never apply to one's own claim: a claimant who
+        // is also an administrator still cannot verify their own pickup.
+        if (claim.getClaimant().getId().equals(actor.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
+                    "Claimants cannot verify or release their own pickup.");
+        }
         requireReviewer(actor, target);
         if (target.getType() != ItemType.FOUND || claim.getStatus() != ClaimStatus.APPROVED) {
             throw new ApiException(HttpStatus.CONFLICT, "HANDOVER_NOT_READY",
@@ -341,14 +350,14 @@ public class ClaimWorkflow {
                     "Only an approved found-item reservation can be released.");
         }
         String trimmedReason = reason == null ? "" : reason.trim();
-        if (trimmedReason.length() > 500) {
+        if (trimmedReason.isEmpty() || trimmedReason.length() > 500) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_REASON",
-                    "Release reason must be at most 500 characters.");
+                    "Release requires a reason of at most 500 characters.");
         }
         Instant now = Instant.now();
         claim.setStatus(ClaimStatus.CANCELLED);
         claim.setReleasedAt(now);
-        claim.setReleaseReason(trimmedReason.isEmpty() ? "Reservation released" : trimmedReason);
+        claim.setReleaseReason(trimmedReason);
         target.setStatus(target.getStatus() == ItemStatus.RESERVED ? ItemStatus.OPEN : target.getStatus());
         target.setResolvedAt(null);
         if (lost != null && lost.getStatus() == ItemStatus.RESERVED) {
@@ -411,11 +420,6 @@ public class ClaimWorkflow {
                     .orElseThrow(() -> notFound("Report not found.")));
         }
         return new LockedItems(locked);
-    }
-
-    private Item lockItem(Long itemId) {
-        return itemRepository.findByIdForUpdate(itemId)
-                .orElseThrow(() -> notFound("Report not found."));
     }
 
     private void requireVisible(Item item) {
