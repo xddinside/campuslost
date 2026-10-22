@@ -4,7 +4,14 @@ import { api, AUTH_EXPIRED_EVENT, clearAuth, readAuth, writeAuth } from './api'
 
 const session = (token: string) => ({
   token,
-  user: { id: 7, name: 'Alice', email: 'alice@demo.dev', role: 'USER' as const },
+  user: {
+    id: 7,
+    name: 'Alice',
+    email: 'alice@demo.dev',
+    phone: null,
+    role: 'USER' as const,
+    createdAt: new Date().toISOString(),
+  },
 })
 
 const unauth = () =>
@@ -31,7 +38,7 @@ describe('api auth expiry', () => {
     let resolveFetch: (r: Promise<Response>) => void = () => {}
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve })),
+      vi.fn(() => new Promise<Response>((res) => { resolveFetch = res })),
     )
     const seen: Event[] = []
     window.addEventListener(AUTH_EXPIRED_EVENT, (e) => seen.push(e))
@@ -53,7 +60,7 @@ describe('api auth expiry', () => {
       'fetch',
       vi.fn((_: string, init?: RequestInit) => {
         signals.push(init?.signal ?? null)
-        return new Promise<Response>((resolve, reject) => {
+        return new Promise<Response>((_, reject) => {
           init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
         })
       }),
