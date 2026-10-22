@@ -202,7 +202,8 @@ class ApiSecurityAndPrivacyTest {
 
         String itemJson = """
                 {"type":"FOUND","title":"Bottle with photo","description":"A detailed description of the bottle.",
-                 "category":"Other","location":"Gym","dateOccurred":"2026-01-02T10:00:00Z","photoId":"%s"}
+                 "category":"Other","location":"Gym","dateOccurred":"2026-01-02T10:00:00Z","photoId":"%s",
+                 "ownershipQuestion":"What colour is the sticker under the lid?"}
                 """.formatted(photoId);
         MvcResult created = mvc.perform(post("/api/items")
                         .header("Authorization", bearer(alice))
@@ -219,7 +220,8 @@ class ApiSecurityAndPrivacyTest {
         // Another user cannot attach Alice's upload by guessing its ID.
         String bobItemJson = """
                 {"type":"FOUND","title":"Borrowed photo","description":"A detailed description for this item.",
-                 "category":"Other","location":"Gym","dateOccurred":"2026-01-02T10:00:00Z","photoId":"%s"}
+                 "category":"Other","location":"Gym","dateOccurred":"2026-01-02T10:00:00Z","photoId":"%s",
+                 "ownershipQuestion":"What colour is the sticker under the lid?"}
                 """.formatted(photoId);
         mvc.perform(post("/api/items")
                         .header("Authorization", bearer(bob))
