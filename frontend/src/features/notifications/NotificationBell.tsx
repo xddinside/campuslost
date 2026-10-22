@@ -162,6 +162,12 @@ export function NotificationBell(_props: NotificationBellProps) {
                       notification={notification}
                       onOpen={() => {
                         if (!notification.readAt) markRead.mutate(notification.id)
+                        // The alert's destination renders claims, reports, and
+                        // matches that this notification just changed; drop the
+                        // account cache so the target page refetches them.
+                        void queryClient.invalidateQueries({
+                          queryKey: queryKeys.account(user?.id ?? 0),
+                        })
                         setOpen(false)
                       }}
                     />
