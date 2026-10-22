@@ -16,7 +16,7 @@ import { Route as MyRouteImport } from './routes/my'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ReportRouteImport } from './routes/report'
 import { Route as ItemsIdRouteImport } from './routes/items.$id'
-import { Route as ItemsIdEditRouteImport } from './routes/items.$id.edit'
+import { Route as ItemsIdEditRouteImport } from './routes/items_.$id.edit'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -54,9 +54,9 @@ const ItemsIdRoute = ItemsIdRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const ItemsIdEditRoute = ItemsIdEditRouteImport.update({
-  id: '/edit',
-  path: '/edit',
-  getParentRoute: () => ItemsIdRoute,
+  id: '/items_/$id/edit',
+  path: '/items/$id/edit',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -66,7 +66,7 @@ export interface FileRoutesByFullPath {
   '/my': typeof MyRoute
   '/register': typeof RegisterRoute
   '/report': typeof ReportRoute
-  '/items/$id': typeof ItemsIdRouteWithChildren
+  '/items/$id': typeof ItemsIdRoute
   '/items/$id/edit': typeof ItemsIdEditRoute
 }
 export interface FileRoutesByTo {
@@ -76,7 +76,7 @@ export interface FileRoutesByTo {
   '/my': typeof MyRoute
   '/register': typeof RegisterRoute
   '/report': typeof ReportRoute
-  '/items/$id': typeof ItemsIdRouteWithChildren
+  '/items/$id': typeof ItemsIdRoute
   '/items/$id/edit': typeof ItemsIdEditRoute
 }
 export interface FileRoutesById {
@@ -87,8 +87,8 @@ export interface FileRoutesById {
   '/my': typeof MyRoute
   '/register': typeof RegisterRoute
   '/report': typeof ReportRoute
-  '/items/$id': typeof ItemsIdRouteWithChildren
-  '/items/$id/edit': typeof ItemsIdEditRoute
+  '/items/$id': typeof ItemsIdRoute
+  '/items_/$id/edit': typeof ItemsIdEditRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -120,7 +120,7 @@ export interface FileRouteTypes {
     | '/register'
     | '/report'
     | '/items/$id'
-    | '/items/$id/edit'
+    | '/items_/$id/edit'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,7 +130,8 @@ export interface RootRouteChildren {
   MyRoute: typeof MyRoute
   RegisterRoute: typeof RegisterRoute
   ReportRoute: typeof ReportRoute
-  ItemsIdRoute: typeof ItemsIdRouteWithChildren
+  ItemsIdRoute: typeof ItemsIdRoute
+  ItemsIdEditRoute: typeof ItemsIdEditRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -184,26 +185,15 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ItemsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/items/$id/edit': {
-      id: '/items/$id/edit'
-      path: '/edit'
+    '/items_/$id/edit': {
+      id: '/items_/$id/edit'
+      path: '/items/$id/edit'
       fullPath: '/items/$id/edit'
       preLoaderRoute: typeof ItemsIdEditRouteImport
-      parentRoute: typeof ItemsIdRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
-
-interface ItemsIdRouteChildren {
-  ItemsIdEditRoute: typeof ItemsIdEditRoute
-}
-
-const ItemsIdRouteChildren: ItemsIdRouteChildren = {
-  ItemsIdEditRoute: ItemsIdEditRoute,
-}
-
-const ItemsIdRouteWithChildren =
-  ItemsIdRoute._addFileChildren(ItemsIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -212,7 +202,8 @@ const rootRouteChildren: RootRouteChildren = {
   MyRoute: MyRoute,
   RegisterRoute: RegisterRoute,
   ReportRoute: ReportRoute,
-  ItemsIdRoute: ItemsIdRouteWithChildren,
+  ItemsIdRoute: ItemsIdRoute,
+  ItemsIdEditRoute: ItemsIdEditRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

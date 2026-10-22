@@ -24,7 +24,7 @@ import { CATEGORIES, dateInputToIso, dateInputValue } from '../lib/format'
 import { invalidateWorkflow, queryKeys } from '../lib/query'
 import type { ItemEdit, ItemPatch } from '../lib/types'
 
-export const Route = createFileRoute('/items/$id/edit')({
+export const Route = createFileRoute('/items_/$id/edit')({
   component: EditItemPage,
 })
 
@@ -241,6 +241,7 @@ function EditForm({ edit }: { edit: ItemEdit }) {
                 isNew={false}
                 value={ownershipQuestion}
                 onChange={setOwnershipQuestion}
+                error={fieldErrors.ownershipQuestion}
                 onValidityChange={setQuestionValidity}
               />
             )}

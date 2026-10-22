@@ -1,0 +1,237 @@
+/* Private ownership questions and evidence. Feature-local, themed with the
+   shared tokens so light and dark modes stay consistent. */
+
+.ownership-field {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: color-mix(in oklab, var(--muted) 55%, var(--card));
+  padding: 1rem;
+}
+
+.ownership-field-head {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.ownership-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--primary);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ownership-help {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.ownership-input {
+  background: var(--card);
+}
+
+.ownership-field-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+}
+
+.ownership-hint {
+  text-align: right;
+}
+
+.ownership-error {
+  color: var(--destructive);
+  font-weight: 650;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.ownership-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0;
+  border-radius: 0.6rem;
+  background: var(--card);
+  padding: 0.55rem 0.65rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.ownership-note svg {
+  flex: none;
+  margin-block-start: 0.1rem;
+  color: var(--primary);
+}
+
+.ownership-safety {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.ownership-answer {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.ownership-question-card {
+  display: grid;
+  gap: 0.35rem;
+  border-inline-start: 3px solid var(--primary);
+  border-radius: 0.65rem;
+  background: color-mix(in oklab, var(--primary) 7%, var(--card));
+  padding: 0.75rem 0.85rem;
+}
+
+.ownership-question-text {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.ownership-answer-label {
+  margin-block-start: 0.15rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.ownership-answer-input {
+  min-height: 6.5rem;
+  background: var(--card);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.ownership-answer-input[aria-invalid="true"] {
+  border-color: var(--destructive);
+}
+
+.ownership-answer-empty {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.ownership-answer-empty p {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.ownership-answer-problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--destructive) 35%, var(--border));
+  color: var(--destructive);
+  font-weight: 600;
+}
+
+.ownership-answer-problem svg {
+  flex: none;
+  margin-block-start: 0.15rem;
+}
+
+.ownership-evidence {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: color-mix(in oklab, var(--muted) 45%, var(--card));
+  padding: 0.8rem 0.9rem;
+}
+
+.ownership-evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.ownership-private-pill {
+  border: 1px solid color-mix(in oklab, var(--primary) 35%, var(--border));
+  border-radius: 999px;
+  padding: 0.1rem 0.42rem;
+  color: var(--primary);
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ownership-evidence-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.ownership-evidence-list div {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.ownership-evidence-list dt {
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.ownership-evidence-list dd {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.83rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.ownership-evidence-empty {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.ownership-evidence-foot {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.ownership-evidence-muted {
+  color: var(--muted-foreground);
+  font-size: 0.8rem;
+}
+
+.ownership-evidence-muted p {
+  margin: 0;
+}

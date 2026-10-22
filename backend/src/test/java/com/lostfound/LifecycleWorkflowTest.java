@@ -1,5 +1,6 @@
 package com.lostfound;
 
+import com.lostfound.contract.ClaimEvidencePolicy;
 import com.lostfound.dto.ClaimRequest;
 import com.lostfound.exception.ApiException;
 import com.lostfound.model.*;
@@ -19,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -48,6 +50,14 @@ class LifecycleWorkflowTest {
     ClaimService claimService;
     @Autowired
     ItemService itemService;
+
+    /**
+     * The ownership feature normally installs a real adapter. This class keeps
+     * the core fail-closed contract covered by replacing it with one that
+     * cannot prepare evidence.
+     */
+    @MockitoBean
+    ClaimEvidencePolicy evidencePolicy;
 
     TestFixtures fixtures;
     User alice;
@@ -190,7 +200,7 @@ class LifecycleWorkflowTest {
     }
 
     @Test
-    void questionBearingClaimFailsClosedWithoutPolicy() {
+    void questionBearingClaimFailsClosedWhenPolicyCannotPrepare() {
         Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Laptop sleeve");
         found.setOwnershipQuestion("What sticker is inside?");
         items.save(found);
