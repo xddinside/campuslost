@@ -1,0 +1,25 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/lostfound?useUnicode=true&characterEncoding=utf8
+    username: lostfound
+    password: lostfound
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    database-platform: org.hibernate.dialect.MariaDBDialect
+    properties:
+      hibernate:
+        format_sql: true
+
+app:
+  jwt:
+    secret: "c2VjcmV0LWtleS1sb3N0LWFuZC1mb3VuZC1kZW1vLTIwMjYtc2VjcmV0LWtleS1sb3N0LWFuZC1mb3VuZC1kZW1vLTIwMjY="
+    expiration-ms: 86400000
+  cors:
+    allowed-origins: http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000
