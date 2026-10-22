@@ -9,6 +9,7 @@ import com.lostfound.model.Item;
 import com.lostfound.model.Role;
 import com.lostfound.model.User;
 import com.lostfound.repository.ClaimRepository;
+import com.lostfound.repository.ItemRepository;
 import com.lostfound.workflow.ClaimWorkflow;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,15 +21,18 @@ import java.util.List;
 public class ClaimService {
 
     private final ClaimRepository claimRepository;
+    private final ItemRepository itemRepository;
     private final ItemService itemService;
     private final ClaimWorkflow claimWorkflow;
     private final ClaimMapper mapper;
 
     public ClaimService(ClaimRepository claimRepository,
+                        ItemRepository itemRepository,
                         ItemService itemService,
                         ClaimWorkflow claimWorkflow,
                         ClaimMapper mapper) {
         this.claimRepository = claimRepository;
+        this.itemRepository = itemRepository;
         this.itemService = itemService;
         this.claimWorkflow = claimWorkflow;
         this.mapper = mapper;
@@ -41,8 +45,17 @@ public class ClaimService {
 
     @Transactional(readOnly = true)
     public List<ClaimResponse> listForItem(User user, Long itemId) {
-        Item item = itemService.findVisible(itemId);
+        // Claim history survives soft deletion: the reporter and admins may
+        // still read it, while everyone else gets the same not-found the
+        // deleted report itself returns.
+        Item item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
+                        "Report not found."));
         if (!claimWorkflow.canReview(user, item)) {
+            if (item.isDeleted()) {
+                throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND",
+                        "Report not found.");
+            }
             throw new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN",
                     "You can only view responses on your own reports.");
         }
