@@ -10,6 +10,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class MatchRefreshService {
     private final MatchScoring scoring;
     private final ApplicationEventPublisher events;
     private final EntityManager entityManager;
+    private final ObjectProvider<MatchRefreshService> self;
     private final int maxCatchUpItems;
 
     public MatchRefreshService(ItemRepository itemRepository,
@@ -46,12 +48,14 @@ public class MatchRefreshService {
                                MatchScoring scoring,
                                ApplicationEventPublisher events,
                                EntityManager entityManager,
+                               ObjectProvider<MatchRefreshService> self,
                                @Value("${app.matching.catch-up-max-items:500}") int maxCatchUpItems) {
         this.itemRepository = itemRepository;
         this.candidateRepository = candidateRepository;
         this.scoring = scoring;
         this.events = events;
         this.entityManager = entityManager;
+        this.self = self;
         this.maxCatchUpItems = Math.max(1, maxCatchUpItems);
     }
 
@@ -91,27 +95,65 @@ public class MatchRefreshService {
     }
 
     /**
-     * Bounded restart catch-up. Recomputes and republishes snapshots for up to
-     * {@code app.matching.catch-up-max-items} open reports, even when scores did
-     * not change, so a later-installed alerts consumer can backfill.
+     * Bounded restart catch-up. Recomputes and republishes snapshots for every
+     * open report in batches of {@code app.matching.catch-up-max-items} source
+     * reports per transaction, even when scores did not change, so a
+     * later-installed alerts consumer can backfill. The bound limits how many
+     * sources one batch replaces, never the candidate set a source is compared
+     * against: each batch still scores against the complete set of open
+     * reports, so published snapshots are always complete.
+     */
+    public RefreshSummary refreshAll() {
+        List<Long> sourceIds = openItemIds();
+        if (sourceIds.isEmpty()) {
+            return new RefreshSummary(null, 0, 0, 0);
+        }
+        int affected = 0;
+        int stored = 0;
+        int published = 0;
+        for (int start = 0; start < sourceIds.size(); start += maxCatchUpItems) {
+            List<Long> batch = sourceIds.subList(
+                    start, Math.min(start + maxCatchUpItems, sourceIds.size()));
+            RefreshSummary summary = self.getObject().refreshBatch(batch);
+            affected += summary.affectedItems();
+            stored += summary.storedPairs();
+            published += summary.publishedEvents();
+        }
+        log.info("Match catch-up refreshed {} reports and stored {} pairs", affected, stored);
+        return new RefreshSummary(null, affected, stored, published);
+    }
+
+    /**
+     * One catch-up batch: locks the complete set of open reports, replaces the
+     * persisted pairs touching the batch's sources, and publishes a complete
+     * snapshot event for each source in the batch.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public RefreshSummary refreshAll() {
-        Map<Long, Item> openItems = lockOpenItems(maxCatchUpItems);
+    public RefreshSummary refreshBatch(Collection<Long> sourceIds) {
+        Set<Long> batch = new LinkedHashSet<>(sourceIds);
+        Map<Long, Item> openItems = lockOpenItems(null);
         if (openItems.isEmpty()) {
             return new RefreshSummary(null, 0, 0, 0);
         }
         Map<Long, MatchScoring.MatchProfile> profiles = profiles(openItems.values());
         Map<PairKey, ScoredPair> pairs = computePairs(openItems.values(), profiles);
-        Set<Long> affected = new LinkedHashSet<>(openItems.keySet());
 
-        candidateRepository.deleteBetween(affected);
-        int stored = storePairs(pairs, affected);
+        candidateRepository.deleteInvolving(batch);
+        int stored = storePairsInvolving(pairs, batch);
         entityManager.flush();
 
-        int published = publishEvents(affected, pairs, openItems);
-        log.info("Match catch-up refreshed {} reports and stored {} pairs", affected.size(), stored);
-        return new RefreshSummary(null, affected.size(), stored, published);
+        int published = publishEvents(batch, pairs, openItems);
+        return new RefreshSummary(null, batch.size(), stored, published);
+    }
+
+    private List<Long> openItemIds() {
+        return entityManager.createQuery("""
+                        select i.id from Item i
+                        where i.status = :status and i.deletedAt is null
+                        order by i.id asc
+                        """, Long.class)
+                .setParameter("status", ItemStatus.OPEN)
+                .getResultList();
     }
 
     private Map<Long, Item> lockOpenItems(Integer limit) {
@@ -201,19 +243,37 @@ public class MatchRefreshService {
                     || !affected.contains(entry.getKey().foundItemId())) {
                 continue;
             }
-            ScoredPair pair = entry.getValue();
-            MatchCandidateEntity entity = new MatchCandidateEntity();
-            entity.setLostItem(pair.lost());
-            entity.setFoundItem(pair.found());
-            entity.setLostItemVersion(pair.lost().getVersion());
-            entity.setFoundItemVersion(pair.found().getVersion());
-            entity.setScore(pair.score().score());
-            entity.setReasons(String.join("\n", pair.score().reasons()));
-            entity.setUpdatedAt(now);
-            candidateRepository.save(entity);
-            stored++;
+            stored += storePair(entry, now);
         }
         return stored;
+    }
+
+    /** Stores every pair that has at least one endpoint in the batch. */
+    private int storePairsInvolving(Map<PairKey, ScoredPair> pairs, Set<Long> batch) {
+        int stored = 0;
+        Instant now = Instant.now();
+        for (Map.Entry<PairKey, ScoredPair> entry : pairs.entrySet()) {
+            if (!batch.contains(entry.getKey().lostItemId())
+                    && !batch.contains(entry.getKey().foundItemId())) {
+                continue;
+            }
+            stored += storePair(entry, now);
+        }
+        return stored;
+    }
+
+    private int storePair(Map.Entry<PairKey, ScoredPair> entry, Instant now) {
+        ScoredPair pair = entry.getValue();
+        MatchCandidateEntity entity = new MatchCandidateEntity();
+        entity.setLostItem(pair.lost());
+        entity.setFoundItem(pair.found());
+        entity.setLostItemVersion(pair.lost().getVersion());
+        entity.setFoundItemVersion(pair.found().getVersion());
+        entity.setScore(pair.score().score());
+        entity.setReasons(String.join("\n", pair.score().reasons()));
+        entity.setUpdatedAt(now);
+        candidateRepository.save(entity);
+        return 1;
     }
 
     private int publishEvents(Set<Long> affected,

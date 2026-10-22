@@ -88,6 +88,24 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     @Query(value = """
             update notifications
+            set active = false
+            where id = :id and active = true
+            """, nativeQuery = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    int deactivate(@Param("id") Long id);
+
+    @Query(value = """
+            update notifications
+            set read_at = coalesce(read_at, :readAt)
+            where id = :id and recipient_id = :recipientId
+            """, nativeQuery = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    int markReadIfUnread(@Param("id") Long id,
+                         @Param("recipientId") Long recipientId,
+                         @Param("readAt") Instant readAt);
+
+    @Query(value = """
+            update notifications
             set read_at = :readAt
             where recipient_id = :recipientId
               and active = true

@@ -169,7 +169,7 @@ public class MatchScoring {
         }
         if (daysApart == 0) {
             reasons.add("Same date");
-        } else if (daysApart <= DATE_WINDOW_DAYS) {
+        } else if (daysApart < DATE_WINDOW_DAYS) {
             reasons.add(daysApart == 1
                     ? "Dates about a day apart"
                     : "Dates " + daysApart + " days apart");

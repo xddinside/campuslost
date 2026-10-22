@@ -67,7 +67,11 @@ public class NotificationService {
         if (event == null || event.itemId() == null) {
             return;
         }
-        Item source = items.findById(event.itemId()).orElse(null);
+        // Serialize snapshot application against report mutations: the write
+        // transaction holds this row lock before bumping the version, so a
+        // version check under the same lock cannot pass for a stale event and
+        // then deactivate alerts committed by a newer snapshot meanwhile.
+        Item source = items.findByIdForUpdate(event.itemId()).orElse(null);
         if (source == null || source.isDeleted() || source.getVersion() != event.itemVersion()) {
             // A stale snapshot, including a stale empty one, must not change rows.
             return;
@@ -133,8 +137,9 @@ public class NotificationService {
             Set<String> activeKeys = activePairsByRecipient.getOrDefault(
                     existing.getRecipientId(), Set.of());
             if (existing.isActive() && !activeKeys.contains(existing.getDedupeKey())) {
-                existing.setActive(false);
-                notifications.save(existing);
+                // Column-scoped update: never overwrite a concurrently
+                // committed readAt with a stale copy.
+                notifications.deactivate(existing.getId());
             }
         }
     }
@@ -177,8 +182,10 @@ public class NotificationService {
                     "Your response to \"" + title + "\" was declined. You can respond to other reports.");
             case COMPLETED -> {
                 if (event.handoverVerified()) {
-                    String body = "The pickup for \"" + title
-                            + "\" was verified. Both reports are now resolved.";
+                    String body = "The pickup for \"" + title + "\" was verified. "
+                            + (lostReportId != null
+                                    ? "Both reports are now resolved."
+                                    : "The report is now resolved.");
                     deliverClaim(claim, claimantId, NotificationType.HANDOVER_COMPLETED,
                             "completed", "Pickup complete", body);
                     if (!Objects.equals(claimantId, reporterId)) {
@@ -235,9 +242,12 @@ public class NotificationService {
                         "Notification not found."));
         if (notification.getReadAt() == null) {
             // DATETIME(6) keeps microseconds; truncate so a repeated read and
-            // the stored row report the exact same instant.
-            notification.setReadAt(Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
-            notifications.save(notification);
+            // the stored row report the exact same instant. The column-scoped
+            // COALESCE update cannot clobber a concurrent deactivation and a
+            // concurrent first read keeps whichever timestamp committed first.
+            notifications.markReadIfUnread(notification.getId(), user.getId(),
+                    Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+            notification = notifications.findById(notification.getId()).orElse(notification);
         }
         return toResponse(notification);
     }
