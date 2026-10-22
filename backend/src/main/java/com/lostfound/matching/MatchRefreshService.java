@@ -41,6 +41,7 @@ public class MatchRefreshService {
     private final ApplicationEventPublisher events;
     private final EntityManager entityManager;
     private final ObjectProvider<MatchRefreshService> self;
+    private final ObjectProvider<MatchRetryQueue> retryQueue;
     private final int maxCatchUpItems;
 
     public MatchRefreshService(ItemRepository itemRepository,
@@ -49,6 +50,7 @@ public class MatchRefreshService {
                                ApplicationEventPublisher events,
                                EntityManager entityManager,
                                ObjectProvider<MatchRefreshService> self,
+                               ObjectProvider<MatchRetryQueue> retryQueue,
                                @Value("${app.matching.catch-up-max-items:500}") int maxCatchUpItems) {
         this.itemRepository = itemRepository;
         this.candidateRepository = candidateRepository;
@@ -56,6 +58,7 @@ public class MatchRefreshService {
         this.events = events;
         this.entityManager = entityManager;
         this.self = self;
+        this.retryQueue = retryQueue;
         this.maxCatchUpItems = Math.max(1, maxCatchUpItems);
     }
 
@@ -114,10 +117,18 @@ public class MatchRefreshService {
         for (int start = 0; start < sourceIds.size(); start += maxCatchUpItems) {
             List<Long> batch = sourceIds.subList(
                     start, Math.min(start + maxCatchUpItems, sourceIds.size()));
-            RefreshSummary summary = self.getObject().refreshBatch(batch);
-            affected += summary.affectedItems();
-            stored += summary.storedPairs();
-            published += summary.publishedEvents();
+            try {
+                RefreshSummary summary = self.getObject().refreshBatch(batch);
+                affected += summary.affectedItems();
+                stored += summary.storedPairs();
+                published += summary.publishedEvents();
+            } catch (RuntimeException ex) {
+                // A failed batch is queued report by report; the scheduled
+                // retry owns its recovery instead of dropping it.
+                log.warn("Match catch-up batch failed for reports {}; queued for retry",
+                        batch, ex);
+                batch.forEach(id -> retryQueue.getObject().enqueue(id));
+            }
         }
         log.info("Match catch-up refreshed {} reports and stored {} pairs", affected, stored);
         return new RefreshSummary(null, affected, stored, published);

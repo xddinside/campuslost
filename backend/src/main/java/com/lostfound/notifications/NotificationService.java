@@ -1,7 +1,6 @@
 package com.lostfound.notifications;
 
 import com.lostfound.contract.ClaimChangedEvent;
-import com.lostfound.contract.MatchCandidate;
 import com.lostfound.contract.MatchCandidatesChangedEvent;
 import com.lostfound.exception.ApiException;
 import com.lostfound.model.Claim;
@@ -10,6 +9,7 @@ import com.lostfound.model.Item;
 import com.lostfound.model.ItemStatus;
 import com.lostfound.model.ItemType;
 import com.lostfound.model.User;
+import com.lostfound.matching.MatchCandidateEntity;
 import com.lostfound.repository.ClaimRepository;
 import com.lostfound.repository.ItemRepository;
 import org.springframework.data.domain.PageRequest;
@@ -49,15 +49,18 @@ public class NotificationService {
     private final NotificationRepository notifications;
     private final ItemRepository items;
     private final ClaimRepository claims;
+    private final com.lostfound.matching.MatchCandidateRepository matchCandidates;
     private final JdbcTemplate jdbc;
 
     public NotificationService(NotificationRepository notifications,
                                ItemRepository items,
                                ClaimRepository claims,
+                               com.lostfound.matching.MatchCandidateRepository matchCandidates,
                                JdbcTemplate jdbc) {
         this.notifications = notifications;
         this.items = items;
         this.claims = claims;
+        this.matchCandidates = matchCandidates;
         this.jdbc = jdbc;
     }
 
@@ -77,55 +80,42 @@ public class NotificationService {
             return;
         }
 
+        // The persisted candidate table — written by the same committed
+        // refresh that produced this event — is the source of truth.
+        // Reconciling against it means a replayed older snapshot (for example
+        // a stale empty one) can never deactivate alerts a newer snapshot
+        // created, nor resurrect pairs that have since been removed.
         Map<Long, Set<String>> activePairsByRecipient = new HashMap<>();
-        List<AcceptedPair> accepted = new ArrayList<>();
-        List<MatchCandidate> candidates = event.candidates() == null ? List.of() : event.candidates();
-
-        for (MatchCandidate candidate : candidates) {
-            if (candidate == null) {
+        for (MatchCandidateEntity row : matchCandidates.findAllInvolving(event.itemId())) {
+            if (row.getScore() < MIN_MATCH_SCORE) {
                 continue;
             }
-            if (candidate.lostItemId() == null
-                    || candidate.foundItemId() == null
-                    || Objects.equals(candidate.lostItemId(), candidate.foundItemId())) {
-                // Ignore malformed entries without allowing them to abort a
-                // valid pair later in the same snapshot.
-                continue;
-            }
-            boolean touchesSource = Objects.equals(candidate.lostItemId(), event.itemId())
-                    || Objects.equals(candidate.foundItemId(), event.itemId());
-            if (!touchesSource || candidate.score() < MIN_MATCH_SCORE) {
-                continue;
-            }
-
-            Item lost = items.findById(candidate.lostItemId()).orElse(null);
-            Item found = items.findById(candidate.foundItemId()).orElse(null);
-            if (!eligible(lost, candidate.lostItemVersion())
-                    || !eligible(found, candidate.foundItemVersion())
+            Item lost = row.getLostItem();
+            Item found = row.getFoundItem();
+            if (lost == null || found == null
+                    || Objects.equals(lost.getId(), found.getId())
+                    || !eligible(lost, row.getLostItemVersion())
+                    || !eligible(found, row.getFoundItemVersion())
                     || lost.getType() != ItemType.LOST
                     || found.getType() != ItemType.FOUND) {
                 continue;
             }
-
             Long lostAuthor = lost.getReporter().getId();
             Long foundAuthor = found.getReporter().getId();
-            // Payload reporter IDs must agree with the reports we just checked.
-            if (!Objects.equals(lostAuthor, candidate.lostReporterId())
-                    || !Objects.equals(foundAuthor, candidate.foundReporterId())) {
-                continue;
-            }
             if (Objects.equals(lostAuthor, foundAuthor)) {
                 // A person cannot be alerted about matching their own reports.
                 continue;
             }
 
             String dedupeKey = "match:" + lost.getId() + ":" + found.getId();
+            List<String> reasons = row.getReasons() == null || row.getReasons().isBlank()
+                    ? List.of()
+                    : List.of(row.getReasons().split("\n"));
+            AcceptedPair pair = new AcceptedPair(dedupeKey, lost, found, row.getScore(),
+                    reasons, row.getLostItemVersion(), row.getFoundItemVersion(),
+                    lostAuthor, foundAuthor);
             activePairsByRecipient.computeIfAbsent(lostAuthor, key -> new HashSet<>()).add(dedupeKey);
             activePairsByRecipient.computeIfAbsent(foundAuthor, key -> new HashSet<>()).add(dedupeKey);
-            accepted.add(new AcceptedPair(dedupeKey, lost, found, candidate, lostAuthor, foundAuthor));
-        }
-
-        for (AcceptedPair pair : accepted) {
             deliverMatch(pair, pair.lostAuthor());
             deliverMatch(pair, pair.foundAuthor());
         }
@@ -266,7 +256,7 @@ public class NotificationService {
         String title = lostAuthor
                 ? "Possible match for \"" + pair.lost().getTitle() + "\""
                 : "Possible owner for \"" + pair.found().getTitle() + "\"";
-        String reasons = reasonText(pair.candidate().reasons());
+        String reasons = reasonText(pair.reasons());
         String body = lostAuthor
                 ? "A newly found report may match your lost report. Matched on: "
                         + reasons + ". Open it to check."
@@ -275,8 +265,8 @@ public class NotificationService {
 
         upsert(NotificationType.MATCH_FOUND, recipientId, pair.dedupeKey(),
                 pair.lost().getId(), pair.found().getId(), null,
-                pair.candidate().lostItemVersion(), pair.candidate().foundItemVersion(),
-                pair.candidate().score(), reasons,
+                pair.lostItemVersion(), pair.foundItemVersion(),
+                pair.score(), reasons,
                 truncate(title, TITLE_LIMIT), truncate(body, BODY_LIMIT));
     }
 
@@ -432,6 +422,8 @@ public class NotificationService {
     }
 
     private record AcceptedPair(String dedupeKey, Item lost, Item found,
-                                MatchCandidate candidate, Long lostAuthor, Long foundAuthor) {
+                                int score, List<String> reasons,
+                                long lostItemVersion, long foundItemVersion,
+                                Long lostAuthor, Long foundAuthor) {
     }
 }
