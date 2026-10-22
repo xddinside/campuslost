@@ -4,6 +4,7 @@ import { Badge } from '#/components/ui/badge.tsx'
 import { Button } from '#/components/ui/button.tsx'
 import { Card, CardContent } from '#/components/ui/card.tsx'
 import { ClaimBadge, StatusBadge } from '../components/StatusBadge'
+import { HandoverPanel } from '../features/handover'
 import { api } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatDate, timeAgo } from '../lib/format'
@@ -136,6 +137,7 @@ function MyReports({ userId }: { userId: number }) {
 }
 
 function MyClaims({ userId }: { userId: number }) {
+  const queryClient = useQueryClient()
   const { data: claims, isLoading } = useQuery({
     queryKey: queryKeys.accountClaims(userId),
     queryFn: () => api<Claim[]>('/me/claims'),
@@ -180,10 +182,10 @@ function MyClaims({ userId }: { userId: number }) {
               <p className="m-0 mt-2 text-xs text-muted-foreground">
                 {claim.status === 'PENDING' && 'Awaiting the reporter’s review.'}
                 {claim.status === 'APPROVED' &&
-                  'Approved — open the report for contact details and pickup steps.'}
+                  'Approved. Generate a pickup code when you meet the finder.'}
                 {claim.status === 'COMPLETED' &&
                   (claim.itemType === 'FOUND'
-                    ? 'Pickup complete.'
+                    ? 'Resolved. The handover record below shows whether pickup verification was recorded.'
                     : 'The reporter marked this resolved.')}
                 {claim.status === 'REJECTED' && 'The reporter declined this response.'}
                 {claim.status === 'CANCELLED' && 'This response was cancelled.'}
@@ -197,6 +199,13 @@ function MyClaims({ userId }: { userId: number }) {
                   Linked lost report →
                 </Link>
               )}
+              {claim.itemType === 'FOUND'
+                && (claim.status === 'APPROVED' || claim.status === 'COMPLETED') && (
+                  <HandoverPanel
+                    claim={claim}
+                    onChanged={() => { void invalidateWorkflow(queryClient) }}
+                  />
+                )}
             </CardContent>
           </Card>
         ))}
