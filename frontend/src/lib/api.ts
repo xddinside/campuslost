@@ -78,7 +78,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
   const res = await fetch(`/api${path}`, { ...options, headers })
   if (!res.ok) {
-    if (res.status === 401 && auth?.token && typeof window !== 'undefined') {
+    // Only expire the session when the rejected request belongs to the token
+    // that is still current. A delayed 401 from a previous account must not
+    // clear the session someone else just opened.
+    if (res.status === 401 && auth?.token && typeof window !== 'undefined'
+        && readAuth()?.token === auth.token) {
       window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
     }
     throw await parseError(res)

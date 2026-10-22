@@ -36,12 +36,13 @@ export function NotificationBell(_props: NotificationBellProps) {
 
   const query = useInfiniteQuery({
     queryKey: notificationsKey,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       api<NotificationPage>(
         `/me/notifications${qs({
           limit: NOTIFICATIONS_PAGE_SIZE,
           beforeId: pageParam,
         })}`,
+        { signal },
       ),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) => lastPage.nextBeforeId ?? undefined,

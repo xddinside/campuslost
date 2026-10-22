@@ -42,7 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // private queries are allowed to run.
     api<UserDto>('/auth/me')
       .then((current) => {
-        if (cancelled) return
+        // A login that happened while this validation was in flight must win:
+        // only restore when the stored token is still the current one.
+        if (cancelled || readAuth()?.token !== stored.token) return
         writeAuth({ token: stored.token, user: current })
         setUser(current)
       })

@@ -68,7 +68,7 @@ function EditItemPage() {
     )
   }
 
-  return <EditForm key={data.version} edit={data} />
+  return <EditForm key={`${userId}:${data.id}:${data.version}`} edit={data} />
 }
 
 function EditForm({ edit }: { edit: ItemEdit }) {

@@ -179,9 +179,18 @@ function ItemDetailPage() {
               </CardContent>
             </Card>
           ) : activeClaim && user ? (
-            <ExistingClaimPanel claim={activeClaim} item={item} userId={user.id} />
+            <ExistingClaimPanel
+              key={`${user.id}:${item.id}:${activeClaim.id}`}
+              claim={activeClaim}
+              item={item}
+              userId={user.id}
+            />
           ) : canClaim && user ? (
-            <ClaimPanel item={item} presetLostReportId={lostReportId} />
+            <ClaimPanel
+              key={`${user.id}:${item.id}`}
+              item={item}
+              presetLostReportId={lostReportId}
+            />
           ) : (
             <Card className="claim-closed-panel rounded-xl shadow-none ring-border">
               <CardContent>

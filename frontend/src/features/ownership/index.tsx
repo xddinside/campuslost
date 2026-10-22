@@ -130,7 +130,7 @@ export function OwnershipAnswerField({
 
   const questionQuery = useQuery<OwnershipQuestion, ApiError>({
     queryKey: queryKeys.account(userId, 'item', itemId, 'ownership-question'),
-    queryFn: () => api<OwnershipQuestion>(`/items/${itemId}/ownership-question`),
+    queryFn: ({ signal }) => api<OwnershipQuestion>(`/items/${itemId}/ownership-question`, { signal }),
     enabled: hydrated && !!user,
     retry: false,
   })
@@ -255,7 +255,7 @@ export function ClaimEvidence({ claimId }: ClaimEvidenceProps) {
 
   const evidenceQuery = useQuery<ClaimEvidenceResult, ApiError>({
     queryKey: queryKeys.account(userId, 'claim', claimId, 'evidence'),
-    queryFn: () => api<ClaimEvidenceResult>(`/claims/${claimId}/evidence`),
+    queryFn: ({ signal }) => api<ClaimEvidenceResult>(`/claims/${claimId}/evidence`, { signal }),
     enabled: hydrated && !!user,
     retry: false,
   })

@@ -75,7 +75,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
     error: statusError,
   } = useQuery({
     queryKey: queryKeys.account(user?.id ?? 0, 'claims', claim.id, 'handover'),
-    queryFn: () => api<HandoverStatus>(`/claims/${claim.id}/handover`),
+    queryFn: ({ signal }) => api<HandoverStatus>(`/claims/${claim.id}/handover`, { signal }),
     enabled: hydrated && canUse,
     staleTime: 0,
   })

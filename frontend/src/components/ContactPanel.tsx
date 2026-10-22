@@ -15,7 +15,7 @@ export function ContactPanel({ claim, userId }: ContactPanelProps) {
   const isShareable = claim.status === 'APPROVED' || claim.status === 'COMPLETED'
   const { data, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.accountContact(userId, claim.id),
-    queryFn: () => api<ContactResponse>(`/claims/${claim.id}/contact`),
+    queryFn: ({ signal }) => api<ContactResponse>(`/claims/${claim.id}/contact`, { signal }),
     enabled: isShareable,
     gcTime: 0,
     staleTime: 0,

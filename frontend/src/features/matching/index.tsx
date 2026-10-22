@@ -35,7 +35,7 @@ export function MatchPanel({ item }: MatchPanelProps) {
   const isOpen = item.status === 'OPEN'
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.account(user?.id ?? 0, 'item', item.id, 'matches'),
-    queryFn: () => fetchMatches(item.id),
+    queryFn: ({ signal }) => fetchMatches(item.id, signal),
     enabled: hydrated && canView && isOpen,
     staleTime: 5_000,
     refetchInterval: 10_000,
