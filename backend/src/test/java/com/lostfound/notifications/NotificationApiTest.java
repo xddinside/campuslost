@@ -2,6 +2,7 @@ package com.lostfound.notifications;
 
 import com.lostfound.contract.ClaimChangedEvent;
 import com.lostfound.contract.MatchCandidate;
+import com.lostfound.matching.MatchCandidateEntity;
 import com.lostfound.contract.MatchCandidatesChangedEvent;
 import com.lostfound.dto.ClaimRequest;
 import com.lostfound.model.Claim;
@@ -84,6 +85,9 @@ class NotificationApiTest {
     HandoverService handover;
     @Autowired
     HandoverChallengeRepository challenges;
+    @Autowired
+    com.lostfound.matching.MatchCandidateRepository matchCandidates;
+
 
     TestFixtures fixtures;
     User alice;
@@ -95,6 +99,7 @@ class NotificationApiTest {
         fixtures = new TestFixtures(users, items, claims, photos, encoder);
         challenges.deleteAll();
         notifications.deleteAll();
+        matchCandidates.deleteAll();
         fixtures.reset();
         alice = fixtures.user("Alice", Role.USER);
         bob = fixtures.user("Bob", Role.USER);
@@ -105,7 +110,20 @@ class NotificationApiTest {
         return "Bearer " + jwtService.generate(user);
     }
 
+    /**
+     * Delivers the snapshot path end to end: the committed refresh writes the
+     * persisted candidate row first, then the snapshot event reconciles the
+     * notification rows against that table.
+     */
     private void publishPair(Item lost, Item found, int score) {
+        MatchCandidateEntity row = new MatchCandidateEntity();
+        row.setLostItem(lost);
+        row.setFoundItem(found);
+        row.setLostItemVersion(lost.getVersion());
+        row.setFoundItemVersion(found.getVersion());
+        row.setScore(score);
+        row.setReasons("same category\nnear the library");
+        matchCandidates.save(row);
         service.handleMatchSnapshot(new MatchCandidatesChangedEvent(lost.getId(),
                 lost.getVersion(), List.of(new MatchCandidate(lost.getId(), found.getId(),
                 lost.getReporter().getId(), found.getReporter().getId(), score,
@@ -275,6 +293,82 @@ class NotificationApiTest {
         mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unreadCount").value(2));
+    }
+
+    /**
+     * A snapshot produced before the opposite report changed can arrive late
+     * with an older (possibly empty) candidate list while the source's own
+     * version is unchanged. It must not deactivate alerts the newer persisted
+     * snapshot created.
+     */
+    @Test
+    void staleEmptySnapshotCannotHidePersistedMatchAlerts() throws Exception {
+        Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Lost camera");
+        Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found camera");
+        publishPair(lost, found, 82);
+        mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
+                .andExpect(jsonPath("$.unreadCount").value(1));
+
+        // The older empty snapshot replays at an unchanged source version.
+        service.handleMatchSnapshot(new MatchCandidatesChangedEvent(
+                lost.getId(), lost.getVersion(), List.of()));
+
+        mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1))
+                .andExpect(jsonPath("$.notifications.length()").value(1));
+        mvc.perform(get("/api/me/notifications").header("Authorization", bearer(alice)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1));
+    }
+
+    /**
+     * A delivery racing a read-all must land on one side or the other — never
+     * torn: every committed row is either fully read or fully unread, and the
+     * reported unread count agrees with the stored rows.
+     */
+    @Test
+    void concurrentReadAllAndDeliveryLeaveConsistentState() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            for (int round = 0; round < 4; round++) {
+                Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN,
+                        "Umbrella round " + round);
+                Claim claim = fixtures.claim(found, bob, ClaimStatus.APPROVED);
+                CountDownLatch barrier = new CountDownLatch(1);
+                Future<?> reader = pool.submit(() -> {
+                    barrier.await(10, TimeUnit.SECONDS);
+                    mvc.perform(post("/api/me/notifications/read-all")
+                            .header("Authorization", bearer(bob)));
+                    return null;
+                });
+                Future<?> deliverer = pool.submit(() -> {
+                    barrier.await(10, TimeUnit.SECONDS);
+                    service.handleClaimChanged(claimEvent(claim));
+                    return null;
+                });
+                barrier.countDown();
+                reader.get(20, TimeUnit.SECONDS);
+                deliverer.get(20, TimeUnit.SECONDS);
+
+                // Consistency, not a fixed outcome: the race is real, so the
+                // alert may have landed before or after the read-all.
+                List<Notification> rows = notifications.findAll().stream()
+                        .filter(n -> n.getRecipientId().equals(bob.getId()))
+                        .toList();
+                for (Notification row : rows) {
+                    Notification stored = notifications.findById(row.getId()).orElseThrow();
+                    assertThat(stored.getCreatedAt()).isNotNull();
+                }
+                mvc.perform(get("/api/me/notifications")
+                                .header("Authorization", bearer(bob)))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.unreadCount").value(
+                                rows.stream().filter(n -> n.getReadAt() == null).count()));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

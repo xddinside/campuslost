@@ -37,6 +37,8 @@
   },
   "devDependencies": {
     "@tanstack/router-cli": "1.167.45",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "@types/node": "22.20.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",

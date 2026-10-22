@@ -15,14 +15,22 @@ function alert(overrides: Partial<NotificationItem> & { type: NotificationType }
 }
 
 describe('notificationLinkTarget', () => {
-  it('opens claim status alerts on that claim, not the default panel', () => {
+  it('opens claim status alerts on that claim’s history page', () => {
     for (const type of ['CLAIM_APPROVED', 'CLAIM_REJECTED', 'HANDOVER_COMPLETED'] as const) {
       expect(notificationLinkTarget(alert({ type, claimId: 9 }))).toEqual({
-        to: '/items/$id',
-        params: { id: '42' },
-        search: { claimId: 9 },
+        to: '/claims/$claimId',
+        params: { claimId: '9' },
+        search: { itemId: 42 },
       })
     }
+  })
+
+  it('reaches claim history even when the report cannot be opened publicly', () => {
+    const target = notificationLinkTarget(
+      alert({ type: 'HANDOVER_COMPLETED', claimId: 9, itemId: null }),
+    )
+    expect(target.to).toBe('/claims/$claimId')
+    expect(target.params).toEqual({ claimId: '9' })
   })
 
   it('keeps the lost report link on match alerts', () => {
@@ -33,8 +41,13 @@ describe('notificationLinkTarget', () => {
     })
   })
 
-  it('falls back to the account page when no report is attached', () => {
+  it('still reaches claim history when the alert carries no report id', () => {
     expect(notificationLinkTarget(alert({ type: 'CLAIM_APPROVED', itemId: null, claimId: 3 })))
+      .toEqual({ to: '/claims/$claimId', params: { claimId: '3' }, search: undefined })
+  })
+
+  it('falls back to the account page only for claim-less alerts without a report', () => {
+    expect(notificationLinkTarget(alert({ type: 'CLAIM_APPROVED', itemId: null })))
       .toEqual({ to: '/my' })
   })
 

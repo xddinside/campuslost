@@ -21,6 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.concurrent.*;
@@ -50,6 +52,8 @@ class LifecycleWorkflowTest {
     ClaimService claimService;
     @Autowired
     ItemService itemService;
+    @Autowired
+    PlatformTransactionManager txManager;
 
     /**
      * The ownership feature normally installs a real adapter. This class keeps
@@ -219,6 +223,59 @@ class LifecycleWorkflowTest {
             return "OK";
         } catch (ApiException ex) {
             return ex.getStatus().value() == 409 ? "CONFLICT" : "ERROR_" + ex.getCode();
+        }
+    }
+
+    /**
+     * Forced interleaving for the lock order: while a transaction holds the
+     * linked report's row lock, a create that needs both rows must be seen
+     * waiting on the lower id — it must never hold the target's lock while it
+     * waits. The probe only completes if the target lock is still free.
+     */
+    @Test
+    void linkedClaimCreateWaitsOnTheLowerIdLockWithoutHoldingTheTarget() throws Exception {
+        Item lost = fixtures.item(bob, ItemType.LOST, ItemStatus.OPEN, "Low id lost report");
+        Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "High id found report");
+        assertThat(lost.getId()).isLessThan(found.getId());
+
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(3);
+        try {
+            Future<?> holder = pool.submit(() -> tx.execute(status -> {
+                items.findByIdForUpdate(lost.getId());
+                held.countDown();
+                try {
+                    release.await(15, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return null;
+            }));
+            assertThat(held.await(10, TimeUnit.SECONDS)).isTrue();
+
+            Future<Claim> creator = pool.submit(() ->
+                    workflow.create(bob, found.getId(), request("That is my bottle, the blue one.", lost.getId())));
+            // Let the create reach its first lock before probing.
+            Thread.sleep(500);
+
+            // If create had locked the target first, the target would be held
+            // while it waits on the linked report, and this probe would block.
+            Future<Boolean> probe = pool.submit(() -> tx.execute(status -> {
+                items.findByIdForUpdate(found.getId());
+                return Boolean.TRUE;
+            }));
+            assertThat(probe.get(10, TimeUnit.SECONDS))
+                    .as("create must wait on the linked report without holding the target lock")
+                    .isTrue();
+
+            release.countDown();
+            assertThat(creator.get(15, TimeUnit.SECONDS)).isNotNull();
+            holder.get(15, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
         }
     }
 

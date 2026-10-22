@@ -179,13 +179,16 @@ class ApiSecurityAndPrivacyTest {
                 .andExpect(jsonPath("$.code").value("FILE_TOO_LARGE"));
 
         // A tiny compressed file whose header declares a huge canvas must be
-        // rejected from the header alone, without decoding pixels.
+        // rejected from the header alone. The "too large" message can only
+        // come from the dimension pre-check — a decoder that reached the
+        // truncated pixel data would report an unreadable photo instead.
         byte[] declaredBomb = pngWithDeclaredSize(30_000, 30_000);
         mvc.perform(multipart("/api/photos")
                         .file(new MockMultipartFile("file", "bomb.png", "image/png", declaredBomb))
                         .header("Authorization", bearer(alice)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_PHOTO"));
+                .andExpect(jsonPath("$.code").value("INVALID_PHOTO"))
+                .andExpect(jsonPath("$.message", containsString("too large")));
 
         // A traversal filename never reaches storage: the stored name is
         // generated, and the file lands under the photos root.

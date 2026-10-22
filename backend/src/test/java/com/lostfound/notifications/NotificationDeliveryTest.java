@@ -1,8 +1,9 @@
 package com.lostfound.notifications;
 
 import com.lostfound.contract.ClaimChangedEvent;
-import com.lostfound.contract.MatchCandidate;
 import com.lostfound.contract.MatchCandidatesChangedEvent;
+import com.lostfound.matching.MatchCandidateEntity;
+import com.lostfound.matching.MatchCandidateRepository;
 import com.lostfound.model.Claim;
 import com.lostfound.model.ClaimStatus;
 import com.lostfound.model.Item;
@@ -63,6 +64,8 @@ class NotificationDeliveryTest {
     ApplicationEventPublisher publisher;
     @Autowired
     PlatformTransactionManager transactionManager;
+    @Autowired
+    MatchCandidateRepository matchCandidates;
 
     TestFixtures fixtures;
     User alice;
@@ -73,21 +76,37 @@ class NotificationDeliveryTest {
     void setUp() {
         fixtures = new TestFixtures(users, items, claims, photos, encoder);
         notifications.deleteAll();
+        matchCandidates.deleteAll();
         fixtures.reset();
         alice = fixtures.user("Alice", Role.USER);
         bob = fixtures.user("Bob", Role.USER);
         carol = fixtures.user("Carol", Role.USER);
     }
 
-    private MatchCandidate candidate(Item lost, Item found, int score, String... reasons) {
-        return new MatchCandidate(lost.getId(), found.getId(), lost.getReporter().getId(),
-                found.getReporter().getId(), score, List.of(reasons),
-                lost.getVersion(), found.getVersion());
+    /**
+     * Persists the candidate row a committed refresh would have written. The
+     * snapshot event then reconciles notification rows against that table.
+     */
+    private void persistPair(Item lost, Item found, int score, String... reasons) {
+        MatchCandidateEntity row = new MatchCandidateEntity();
+        row.setLostItem(lost);
+        row.setFoundItem(found);
+        row.setLostItemVersion(lost.getVersion());
+        row.setFoundItemVersion(found.getVersion());
+        row.setScore(score);
+        row.setReasons(String.join("\n", reasons));
+        matchCandidates.save(row);
     }
 
-    private MatchCandidatesChangedEvent snapshot(Item source, MatchCandidate... candidates) {
-        return new MatchCandidatesChangedEvent(source.getId(), source.getVersion(),
-                List.of(candidates));
+    private void deletePair(Item lost, Item found) {
+        matchCandidates.findAll().stream()
+                .filter(row -> row.getLostItem().getId().equals(lost.getId())
+                        && row.getFoundItem().getId().equals(found.getId()))
+                .forEach(matchCandidates::delete);
+    }
+
+    private MatchCandidatesChangedEvent snapshot(Item source) {
+        return new MatchCandidatesChangedEvent(source.getId(), source.getVersion(), List.of());
     }
 
     private List<Notification> forRecipient(User user) {
@@ -100,9 +119,9 @@ class NotificationDeliveryTest {
     void oneQualifyingPairNotifiesBothAuthorsOnce() {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Blue bottle");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found bottle");
+        persistPair(lost, found, 78, "same category", "Central Library", "date within 1 day");
 
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 78,
-                "same category", "Central Library", "date within 1 day")));
+        service.handleMatchSnapshot(snapshot(lost));
 
         List<Notification> rows = notifications.findAll();
         assertThat(rows).hasSize(2);
@@ -135,26 +154,37 @@ class NotificationDeliveryTest {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Lost keys");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found keys");
 
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 59, "weak")));
+        persistPair(lost, found, 59, "weak");
+        service.handleMatchSnapshot(snapshot(lost));
         assertThat(notifications.findAll()).isEmpty();
+        deletePair(lost, found);
 
         Item ownFound = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Alice found keys");
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, ownFound, 90, "same author")));
+        persistPair(lost, ownFound, 90, "same author");
+        service.handleMatchSnapshot(snapshot(lost));
         assertThat(notifications.findAll()).isEmpty();
+        deletePair(lost, ownFound);
 
-        MatchCandidate staleVersion = new MatchCandidate(lost.getId(), found.getId(),
-                alice.getId(), bob.getId(), 90, List.of("stale"),
-                lost.getVersion() + 5, found.getVersion());
-        service.handleMatchSnapshot(new MatchCandidatesChangedEvent(lost.getId(),
-                lost.getVersion(), List.of(staleVersion)));
+        // A persisted row whose endpoint versions no longer match the item —
+        // a newer edit superseded it — is not alert-eligible.
+        persistPair(lost, found, 90, "stale");
+        MatchCandidateEntity stale = matchCandidates.findAll().getFirst();
+        stale.setLostItemVersion(lost.getVersion() + 5);
+        matchCandidates.save(stale);
+        service.handleMatchSnapshot(snapshot(lost));
         assertThat(notifications.findAll()).isEmpty();
+        deletePair(lost, found);
 
         Item resolved = fixtures.item(bob, ItemType.FOUND, ItemStatus.RESOLVED, "Resolved keys");
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, resolved, 90, "resolved")));
+        persistPair(lost, resolved, 90, "resolved");
+        service.handleMatchSnapshot(snapshot(lost));
         assertThat(notifications.findAll()).isEmpty();
+        deletePair(lost, resolved);
 
+        // An event whose source version no longer matches is skipped entirely.
+        persistPair(lost, found, 90, "stale source");
         service.handleMatchSnapshot(new MatchCandidatesChangedEvent(lost.getId(),
-                lost.getVersion() + 1, List.of(candidate(lost, found, 90, "stale source"))));
+                lost.getVersion() + 1, List.of()));
         assertThat(notifications.findAll()).isEmpty();
     }
 
@@ -162,16 +192,20 @@ class NotificationDeliveryTest {
     void replayUpdatesSnapshotWithoutResettingReadState() {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Lost scarf");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found scarf");
+        persistPair(lost, found, 70, "category");
 
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 70, "category")));
+        service.handleMatchSnapshot(snapshot(lost));
         Notification bobRow = forRecipient(bob).getFirst();
         Instant createdAt = bobRow.getCreatedAt();
         Instant readAt = Instant.parse("2026-01-01T00:00:00Z");
         bobRow.setReadAt(readAt);
         notifications.save(bobRow);
 
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 91,
-                "category", "same building", "same day")));
+        MatchCandidateEntity row = matchCandidates.findAll().getFirst();
+        row.setScore(91);
+        row.setReasons("category\nsame building\nsame day");
+        matchCandidates.save(row);
+        service.handleMatchSnapshot(snapshot(lost));
 
         List<Notification> rows = notifications.findAll();
         assertThat(rows).hasSize(2);
@@ -184,16 +218,19 @@ class NotificationDeliveryTest {
     }
 
     @Test
-    void emptySnapshotDeactivatesPairButKeepsHistoryAndReadState() {
+    void removedPairDeactivatesAlertButKeepsHistoryAndReadState() {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Lost gloves");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found gloves");
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 88, "category")));
+        persistPair(lost, found, 88, "category");
+        service.handleMatchSnapshot(snapshot(lost));
 
         Notification bobRow = forRecipient(bob).getFirst();
         Instant readAt = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         bobRow.setReadAt(readAt);
         notifications.save(bobRow);
 
+        // The next committed refresh removed the pair from the table.
+        deletePair(lost, found);
         service.handleMatchSnapshot(snapshot(lost));
 
         List<Notification> rows = notifications.findAll();
@@ -203,7 +240,8 @@ class NotificationDeliveryTest {
         assertThat(preserved.getReadAt()).isEqualTo(readAt);
 
         // A later qualifying snapshot revives the pair without resetting readAt.
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 88, "category")));
+        persistPair(lost, found, 88, "category");
+        service.handleMatchSnapshot(snapshot(lost));
         Notification revived = notifications.findById(bobRow.getId()).orElseThrow();
         assertThat(revived.isActive()).isTrue();
         assertThat(revived.getReadAt()).isEqualTo(readAt);
@@ -213,11 +251,16 @@ class NotificationDeliveryTest {
     void staleEmptySnapshotDoesNotDeactivateAnything() {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Lost charger");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found charger");
-        service.handleMatchSnapshot(snapshot(lost, candidate(lost, found, 85, "category")));
+        persistPair(lost, found, 85, "category");
+        service.handleMatchSnapshot(snapshot(lost));
 
+        // An event at an outdated source version is ignored outright.
         service.handleMatchSnapshot(new MatchCandidatesChangedEvent(lost.getId(),
                 lost.getVersion() + 1, List.of()));
+        assertThat(notifications.findAll()).allSatisfy(row -> assertThat(row.isActive()).isTrue());
 
+        // So is a same-version replay of an older empty snapshot.
+        service.handleMatchSnapshot(snapshot(lost));
         assertThat(notifications.findAll()).allSatisfy(row -> assertThat(row.isActive()).isTrue());
     }
 
@@ -225,18 +268,19 @@ class NotificationDeliveryTest {
     void eventPublishedInTransactionDeliversOnlyAfterCommit() {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Lost notebook");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Found notebook");
+        persistPair(lost, found, 77, "category");
         TransactionTemplate transaction = new TransactionTemplate(transactionManager);
 
         transaction.executeWithoutResult(status -> {
-            publisher.publishEvent(snapshot(lost, candidate(lost, found, 77, "category")));
+            publisher.publishEvent(snapshot(lost));
             assertThat(notifications.findAll()).isEmpty();
         });
         assertThat(notifications.findAll()).hasSize(2);
 
         Item otherLost = fixtures.item(carol, ItemType.LOST, ItemStatus.OPEN, "Lost pen");
+        persistPair(otherLost, found, 77, "category");
         transaction.executeWithoutResult(status -> {
-            publisher.publishEvent(snapshot(otherLost,
-                    candidate(otherLost, found, 77, "category")));
+            publisher.publishEvent(snapshot(otherLost));
             status.setRollbackOnly();
         });
         assertThat(notifications.findAll()).hasSize(2);
@@ -246,7 +290,8 @@ class NotificationDeliveryTest {
     void concurrentDuplicateDeliveryKeepsOneRowPerRecipient() throws Exception {
         Item lost = fixtures.item(alice, ItemType.LOST, ItemStatus.OPEN, "Contested bottle");
         Item found = fixtures.item(bob, ItemType.FOUND, ItemStatus.OPEN, "Contested bottle found");
-        MatchCandidatesChangedEvent event = snapshot(lost, candidate(lost, found, 80, "category"));
+        persistPair(lost, found, 80, "category");
+        MatchCandidatesChangedEvent event = snapshot(lost);
 
         int workers = 8;
         CountDownLatch start = new CountDownLatch(1);
