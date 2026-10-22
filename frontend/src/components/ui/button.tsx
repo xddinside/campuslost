@@ -1,5 +1,6 @@
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
+import { isValidElement } from "react"
 
 import { cn } from "#/lib/utils.ts"
 
@@ -42,12 +43,24 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  nativeButton,
+  render,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  // When `render` produces a non-button element (e.g. a Link anchor), Base UI
+  // requires nativeButton={false} or it warns about lost button semantics.
+  const resolvedNativeButton =
+    nativeButton ??
+    (!isValidElement(render) ||
+      render.type === "button" ||
+      render.type === ButtonPrimitive)
+
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      nativeButton={resolvedNativeButton}
+      render={render}
       {...props}
     />
   )
