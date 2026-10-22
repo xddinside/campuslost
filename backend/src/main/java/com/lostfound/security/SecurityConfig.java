@@ -60,7 +60,8 @@ public class SecurityConfig {
                                 "/api/items/*/claims",
                                 "/api/items/*/matches",
                                 "/api/items/*/ownership-question").authenticated()
-                        .requestMatchers("/api/claims/**", "/api/me/**", "/api/admin/**",
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/claims/**", "/api/me/**",
                                 "/api/photos", "/api/photos/**").authenticated()
 
                         // Public browsing and authentication entry points.

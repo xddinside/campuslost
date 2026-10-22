@@ -147,6 +147,25 @@ class ApiSecurityAndPrivacyTest {
     }
 
     @Test
+    void adminEndpointsRejectNonAdminUsers() throws Exception {
+        Item item = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Keys");
+        fixtures.claim(item, bob, ClaimStatus.PENDING);
+
+        for (String path : new String[]{"/api/admin/stats", "/api/admin/items",
+                "/api/admin/items/" + item.getId() + "/claims"}) {
+            mvc.perform(get(path).header("Authorization", bearer(bob)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+            mvc.perform(get(path))
+                    .andExpect(status().isUnauthorized());
+            mvc.perform(get(path).header("Authorization", bearer(admin)))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/admin/photos/cleanup").header("Authorization", bearer(bob)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void contactIsParticipantOnlyAfterApprovalAndIsNoStore() throws Exception {
         Item item = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Wallet");
         Claim claim = fixtures.claim(item, bob, ClaimStatus.PENDING);
