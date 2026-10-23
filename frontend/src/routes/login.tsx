@@ -60,7 +60,7 @@ function LoginPage() {
 
   return (
     <main className="demo-page demo-center">
-      <Card className="rise-in w-full max-w-md rounded-xl shadow-none ring-border">
+      <Card className="rise-in w-full max-w-md">
         <CardContent>
           <p className="island-kicker mb-2">Welcome back</p>
           <h1 className="demo-title mb-6">Log in</h1>
@@ -77,7 +77,7 @@ function LoginPage() {
             <Label className="grid gap-1.5">
               Email
               <Input
-                className="h-11 rounded-lg border-border bg-input/50 px-3"
+                className="h-11"
                 type="email"
                 required
                 autoComplete="email"
@@ -91,7 +91,7 @@ function LoginPage() {
             <Label className="grid gap-1.5">
               Password
               <Input
-                className="h-11 rounded-lg border-border bg-input/50 px-3"
+                className="h-11"
                 type="password"
                 required
                 autoComplete="current-password"
@@ -109,7 +109,7 @@ function LoginPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <Button className="mt-1 h-10 rounded-lg" type="submit" disabled={busy}>
+            <Button className="mt-1 h-11" type="submit" disabled={busy}>
               {busy ? 'Logging in…' : 'Log in'}
             </Button>
           </form>
@@ -126,7 +126,7 @@ function LoginPage() {
           </p>
 
           {demoMode && (
-            <div className="mt-5 rounded-xl border border-dashed border-border bg-muted p-3 text-xs text-muted-foreground">
+            <div className="mt-6 rounded-2xl bg-fill p-4 text-xs leading-relaxed text-muted-foreground">
               <p className="m-0 mb-1 font-bold">Local demo accounts</p>
               <p className="m-0">
                 Admin: admin@lostfound.dev / admin123

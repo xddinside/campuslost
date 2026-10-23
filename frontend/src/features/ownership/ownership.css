@@ -4,10 +4,9 @@
 .ownership-field {
   display: grid;
   gap: 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 0.9rem;
-  background: color-mix(in oklab, var(--muted) 55%, var(--card));
-  padding: 1rem;
+  border-radius: var(--radius-xl);
+  background: var(--fill);
+  padding: 1.1rem;
 }
 
 .ownership-field-head {
@@ -21,16 +20,16 @@
   gap: 0.35rem;
   color: var(--primary);
   font-size: 0.68rem;
-  font-weight: 750;
-  letter-spacing: 0.08em;
+  font-weight: 700;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
 .ownership-help {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 0.8rem;
-  line-height: 1.5;
+  font-size: 0.8125rem;
+  line-height: 1.55;
   text-wrap: pretty;
 }
 
@@ -51,8 +50,8 @@
 }
 
 .ownership-error {
-  color: var(--destructive);
-  font-weight: 650;
+  color: var(--destructive-foreground);
+  font-weight: 600;
   line-height: 1.4;
   text-align: right;
 }
@@ -62,12 +61,13 @@
   align-items: flex-start;
   gap: 0.45rem;
   margin: 0;
-  border-radius: 0.6rem;
+  border-radius: var(--radius-md);
   background: var(--card);
-  padding: 0.55rem 0.65rem;
+  padding: 0.6rem 0.7rem;
   color: var(--muted-foreground);
   font-size: 0.75rem;
   line-height: 1.45;
+  box-shadow: 0 0 0 1px var(--hairline);
 }
 
 .ownership-note svg {
@@ -79,8 +79,8 @@
 .ownership-safety {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 0.7rem;
-  line-height: 1.45;
+  font-size: 0.72rem;
+  line-height: 1.5;
   text-wrap: pretty;
 }
 
@@ -93,24 +93,25 @@
   display: grid;
   gap: 0.35rem;
   border-inline-start: 3px solid var(--primary);
-  border-radius: 0.65rem;
+  border-radius: var(--radius-md);
   background: color-mix(in oklab, var(--primary) 7%, var(--card));
-  padding: 0.75rem 0.85rem;
+  padding: 0.8rem 0.9rem;
 }
 
 .ownership-question-text {
   margin: 0;
   color: var(--foreground);
   font-size: 0.95rem;
-  font-weight: 650;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.45;
   text-wrap: pretty;
 }
 
 .ownership-answer-label {
   margin-block-start: 0.15rem;
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .ownership-answer-input {
@@ -120,18 +121,18 @@
   line-height: 1.5;
 }
 
-.ownership-answer-input[aria-invalid="true"] {
+.ownership-answer-input[aria-invalid='true'] {
   border-color: var(--destructive);
 }
 
 .ownership-answer-empty {
   display: grid;
   gap: 0.35rem;
-  border: 1px dashed var(--border);
-  border-radius: 0.75rem;
-  padding: 0.8rem 0.9rem;
+  border: 1.5px dashed var(--input);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1rem;
   color: var(--muted-foreground);
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   line-height: 1.5;
 }
 
@@ -146,7 +147,7 @@
   gap: 0.5rem;
   border-style: solid;
   border-color: color-mix(in oklab, var(--destructive) 35%, var(--border));
-  color: var(--destructive);
+  color: var(--destructive-foreground);
   font-weight: 600;
 }
 
@@ -158,10 +159,9 @@
 .ownership-evidence {
   display: grid;
   gap: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 0.8rem;
-  background: color-mix(in oklab, var(--muted) 45%, var(--card));
-  padding: 0.8rem 0.9rem;
+  border-radius: var(--radius-lg);
+  background: var(--fill);
+  padding: 0.9rem 1rem;
 }
 
 .ownership-evidence-head {
@@ -173,12 +173,12 @@
 }
 
 .ownership-private-pill {
-  border: 1px solid color-mix(in oklab, var(--primary) 35%, var(--border));
   border-radius: 999px;
-  padding: 0.1rem 0.42rem;
+  padding: 0.12rem 0.5rem;
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
   color: var(--primary);
   font-size: 0.62rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -197,7 +197,7 @@
 .ownership-evidence-list dt {
   color: var(--muted-foreground);
   font-size: 0.68rem;
-  font-weight: 750;
+  font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
 }
@@ -223,7 +223,7 @@
   margin: 0;
   color: var(--muted-foreground);
   font-size: 0.68rem;
-  line-height: 1.45;
+  line-height: 1.5;
   text-wrap: pretty;
 }
 

@@ -239,7 +239,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
         tone={verifiedAt ? 'success' : 'default'}
       >
         <div className="grid gap-2">
-          <p className="m-0 inline-flex items-center gap-1.5 text-sm font-bold text-emerald-800 dark:text-emerald-300">
+          <p className="m-0 inline-flex items-center gap-1.5 text-sm font-semibold text-success-foreground">
             <CheckCircle aria-hidden="true" size={18} weight="fill" />
             {verifiedAt ? 'Handover confirmed in person' : 'Resolved without pickup verification'}
           </p>
@@ -302,13 +302,13 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
             )}
 
             {codeExpired && (
-              <p className="m-0 inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-300">
+              <p className="m-0 inline-flex items-center gap-1.5 text-xs font-semibold text-warning-foreground">
                 <WarningCircle aria-hidden="true" size={16} weight="fill" />
                 That code has expired. Generate a fresh one below.
               </p>
             )}
 
-            <p className="m-0 rounded-lg bg-muted/60 p-2.5 text-xs text-muted-foreground">
+            <p className="m-0 rounded-xl bg-card p-3 text-xs leading-relaxed text-muted-foreground ring-1 ring-hairline">
               Keep this code on your own device. The finder enters it on theirs, so the
               handover is proven without sharing it in a chat or photo.
             </p>
@@ -339,7 +339,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
               </p>
             )}
             {status?.state === 'LOCKED' && (
-              <p className="m-0 inline-flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+              <p className="m-0 inline-flex items-start gap-1.5 text-xs text-warning-foreground">
                 <LockKey aria-hidden="true" size={15} weight="fill" className="mt-0.5" />
                 Too many incorrect entries were tried. Generate a fresh code so the finder
                 can try again.
@@ -408,13 +408,13 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
                 placeholder="000000"
                 aria-invalid={verifyError ? 'true' : undefined}
                 aria-describedby={verifyError ? `handover-code-error-${claim.id}` : undefined}
-                className="h-12 text-center text-xl font-bold tracking-[0.35em] tabular-nums"
+                className="h-14 rounded-2xl text-center text-2xl font-semibold tracking-[0.35em] tabular-nums"
               />
               {verifyError && (
                 <p
                   id={`handover-code-error-${claim.id}`}
                   role="alert"
-                  className="m-0 text-xs font-bold text-destructive"
+                  className="m-0 text-xs font-semibold text-destructive-foreground"
                 >
                   {verifyError}
                 </p>
@@ -471,7 +471,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
                     aria-invalid={releaseError ? 'true' : undefined}
                   />
                   {releaseError && (
-                    <p role="alert" className="m-0 text-xs font-bold text-destructive">
+                    <p role="alert" className="m-0 text-xs font-semibold text-destructive-foreground">
                       {releaseError}
                     </p>
                   )}
@@ -522,15 +522,15 @@ function StatusShell({
       aria-label="Pickup handover"
       className={
         tone === 'success'
-          ? 'grid gap-3 rounded-xl border border-emerald-600/30 bg-emerald-50/70 p-3.5 dark:bg-emerald-950/30'
-          : 'grid gap-3 rounded-xl border border-border bg-muted/40 p-3.5'
+          ? 'grid gap-3 rounded-2xl bg-success/10 p-4 outline-1 -outline-offset-1 outline-success/25'
+          : 'grid gap-3 rounded-2xl bg-fill p-4 outline-1 -outline-offset-1 outline-hairline'
       }
     >
       <div className="flex items-center gap-2.5">
         <span
           className={
             tone === 'success'
-              ? 'inline-flex size-8 items-center justify-center rounded-full bg-emerald-600/15 text-emerald-700 dark:text-emerald-300'
+              ? 'inline-flex size-8 items-center justify-center rounded-full bg-success/15 text-success-foreground'
               : 'inline-flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary'
           }
         >

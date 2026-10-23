@@ -61,7 +61,7 @@ function RegisterPage() {
 
   return (
     <main className="demo-page demo-center">
-      <Card className="rise-in w-full max-w-md rounded-xl shadow-none ring-border">
+      <Card className="rise-in w-full max-w-md">
         <CardContent>
           <p className="island-kicker mb-2">Join CampusLost</p>
           <h1 className="demo-title mb-6">Create your account</h1>
@@ -69,7 +69,7 @@ function RegisterPage() {
             <Label className="grid gap-1.5">
               Name
               <Input
-                className="h-11 rounded-lg border-border bg-input/50 px-3"
+                className="h-11"
                 required
                 maxLength={100}
                 autoComplete="name"
@@ -83,7 +83,7 @@ function RegisterPage() {
             <Label className="grid gap-1.5">
               Email
               <Input
-                className="h-11 rounded-lg border-border bg-input/50 px-3"
+                className="h-11"
                 type="email"
                 required
                 autoComplete="email"
@@ -97,7 +97,7 @@ function RegisterPage() {
             <Label className="grid gap-1.5">
               Password
               <Input
-                className="h-11 rounded-lg border-border bg-input/50 px-3"
+                className="h-11"
                 type="password"
                 required
                 minLength={6}
@@ -114,7 +114,7 @@ function RegisterPage() {
             <Label className="grid gap-1.5">
               Phone (optional)
               <Input
-                className="h-11 rounded-lg border-border bg-input/50 px-3"
+                className="h-11"
                 maxLength={30}
                 autoComplete="tel"
                 value={phone}
@@ -128,7 +128,7 @@ function RegisterPage() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            <Button className="mt-1 h-10 rounded-lg" type="submit" disabled={busy}>
+            <Button className="mt-1 h-11" type="submit" disabled={busy}>
               {busy ? 'Creating account…' : 'Sign up'}
             </Button>
           </form>

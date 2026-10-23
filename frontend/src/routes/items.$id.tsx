@@ -91,8 +91,8 @@ function ItemDetailPage() {
   if (isLoading) {
     return (
       <main className="demo-page">
-        <Card className="rounded-xl shadow-none ring-border">
-          <CardContent className="text-center text-sm text-muted-foreground">Loading…</CardContent>
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">Loading…</CardContent>
         </Card>
       </main>
     )
@@ -130,15 +130,16 @@ function ItemDetailPage() {
       </Link>
 
       <div className="item-detail-layout rise-in">
-        <Card className="item-detail-card gap-0 rounded-xl shadow-none ring-border">
-          <CardContent className="p-0">
-            {item.photoUrl && (
-              <img className="detail-photo" src={item.photoUrl} alt={`Photo of ${item.title}`} />
-            )}
-
+        <div className="item-detail-card">
+          {item.photoUrl && (
+            <img className="detail-photo" src={item.photoUrl} alt={`Photo of ${item.title}`} />
+          )}
+          <div className="item-detail-body">
             <header>
               <div className="detail-badges">
-                <Badge>{item.type === 'LOST' ? 'Lost item' : 'Found item'}</Badge>
+                <Badge variant={item.type === 'LOST' ? 'warning' : 'success'}>
+                  {item.type === 'LOST' ? 'Lost item' : 'Found item'}
+                </Badge>
                 <StatusBadge status={item.status} />
                 <Badge variant="outline">{item.category}</Badge>
               </div>
@@ -180,8 +181,8 @@ function ItemDetailPage() {
                 </p>
               </div>
             </section>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         <aside className="claim-sidebar" aria-label="Report actions">
           {canManage && user ? (
@@ -191,13 +192,13 @@ function ItemDetailPage() {
               <MatchPanel item={item} />
             </>
           ) : hydrated && user && isLoadingMyClaims ? (
-            <Card className="rounded-xl shadow-none ring-border">
+            <Card>
               <CardContent className="text-sm text-muted-foreground">
                 Checking your response status…
               </CardContent>
             </Card>
           ) : hydrated && user && isErrorMyClaims ? (
-            <Card className="rounded-xl shadow-none ring-border">
+            <Card>
               <CardContent className="flex items-center gap-3 text-sm">
                 <span className="text-destructive">Couldn't load your response history.</span>
                 <Button size="sm" variant="outline" onClick={() => void refetchMyClaims()}>
@@ -226,7 +227,7 @@ function ItemDetailPage() {
               presetLostReportId={lostReportId}
             />
           ) : (
-            <Card className="claim-closed-panel rounded-xl shadow-none ring-border">
+            <Card className="claim-closed-panel">
               <CardContent>
                 {item.status === 'OPEN' && hydrated && !user ? (
                   <>
@@ -299,7 +300,7 @@ function ManagePanel({ item }: { item: Item }) {
   const editable = item.status === 'OPEN' || item.status === 'RESOLVED'
 
   return (
-    <Card className="rounded-xl shadow-none ring-border">
+    <Card>
       <CardContent>
         <p className="island-kicker mb-3">You manage this report</p>
         <div className="grid gap-2.5">
@@ -462,7 +463,7 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
 
   return (
     <form onSubmit={onSubmit} noValidate>
-      <Card className="claim-panel rounded-xl shadow-none ring-border">
+      <Card className="claim-panel">
         <CardContent>
           <h2>{isLostReport ? 'Found this item?' : 'Claim this item'}</h2>
           <p className="claim-intro">
@@ -472,7 +473,7 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
           </p>
 
           {lostReportId && (
-            <p className="m-0 mb-3 rounded-lg bg-muted p-2 text-xs text-muted-foreground">
+            <p className="m-0 mb-3 rounded-xl bg-fill p-3 text-xs text-muted-foreground">
               Linking to your lost report
               {linkedReport ? ` “${linkedReport.title}”` : ` #${lostReportId}`}.
             </p>
@@ -482,7 +483,7 @@ function ClaimPanel({ item, presetLostReportId }: { item: Item; presetLostReport
           <Textarea
             id="claim-message"
             name="claim-message"
-            className="claim-textarea rounded-lg border-border bg-input/50"
+            className="claim-textarea"
             value={message}
             onChange={(event) => {
               const next = event.target.value
@@ -573,7 +574,7 @@ function ExistingClaimPanel({ claim, item, userId }: { claim: Claim; item: Item;
   })
 
   return (
-    <Card className="existing-claim-panel rounded-xl shadow-none ring-border">
+    <Card className="existing-claim-panel">
       <CardContent>
         <div className="existing-claim-heading">
           <h2>{heading}</h2>
@@ -661,7 +662,7 @@ function ClaimsPanel({ item, userId }: { item: Item; userId: number }) {
   })
 
   return (
-    <Card className="rounded-xl shadow-none ring-border">
+    <Card>
       <CardContent>
         <p className="island-kicker mb-3">Responses ({claims?.length ?? 0})</p>
         {isLoading && <p className="m-0 text-sm text-muted-foreground">Loading responses…</p>}
@@ -716,7 +717,7 @@ function ClaimCard({
 }) {
   const queryClient = useQueryClient()
   return (
-    <Card size="sm" className="rounded-xl bg-muted shadow-none ring-border">
+    <Card size="sm" className="rounded-2xl bg-fill shadow-none outline-transparent">
       <CardContent>
         <div className="mb-1.5 flex flex-wrap items-center gap-2">
           <span className="text-sm font-bold text-foreground">{claim.claimantName}</span>

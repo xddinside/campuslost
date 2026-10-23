@@ -32,7 +32,7 @@ function MyItemsPage() {
           <MyClaims userId={user.id} />
         </div>
       ) : (
-        <Card className="rounded-xl shadow-none ring-border">
+        <Card>
           <CardContent className="text-sm text-muted-foreground">Loading your account…</CardContent>
         </Card>
       )}
@@ -66,12 +66,12 @@ function MyReports({ userId }: { userId: number }) {
       <h2 className="demo-section-title mb-3">Reports I posted</h2>
       <div className="grid gap-3">
         {isLoading && (
-          <Card size="sm" className="rounded-xl shadow-none ring-border">
+          <Card size="sm">
             <CardContent className="text-sm text-muted-foreground">Loading…</CardContent>
           </Card>
         )}
         {isError && (
-          <Card size="sm" className="rounded-xl shadow-none ring-border">
+          <Card size="sm">
             <CardContent className="flex items-center gap-3 text-sm">
               <span className="text-destructive">Couldn't load your reports.</span>
               <Button size="sm" variant="outline" onClick={() => void refetch()}>Retry</Button>
@@ -84,7 +84,7 @@ function MyReports({ userId }: { userId: number }) {
           </Alert>
         )}
         {items && items.length === 0 && (
-          <Card size="sm" className="rounded-xl shadow-none ring-border">
+          <Card size="sm">
             <CardContent className="text-sm text-muted-foreground">
               You haven't reported anything yet.{' '}
               <Link to="/report" className="font-bold no-underline">Report an item →</Link>
@@ -92,7 +92,7 @@ function MyReports({ userId }: { userId: number }) {
           </Card>
         )}
         {items?.map((item) => (
-          <Card key={item.id} size="sm" className="rounded-xl shadow-none ring-border">
+          <Card key={item.id} size="sm">
             <CardContent>
               <div className="flex flex-wrap items-center gap-2">
                 <Link
@@ -104,7 +104,7 @@ function MyReports({ userId }: { userId: number }) {
                 </Link>
                 <StatusBadge status={item.status} />
                 {item.pendingClaims > 0 && item.status === 'OPEN' && (
-                  <Badge variant="secondary">
+                  <Badge variant="info">
                     {item.pendingClaims} pending response{item.pendingClaims > 1 ? 's' : ''}
                   </Badge>
                 )}
@@ -168,12 +168,12 @@ function MyClaims({ userId }: { userId: number }) {
       <h2 className="demo-section-title mb-3">Responses I sent</h2>
       <div className="grid gap-3">
         {isLoading && (
-          <Card size="sm" className="rounded-xl shadow-none ring-border">
+          <Card size="sm">
             <CardContent className="text-sm text-muted-foreground">Loading…</CardContent>
           </Card>
         )}
         {isError && (
-          <Card size="sm" className="rounded-xl shadow-none ring-border">
+          <Card size="sm">
             <CardContent className="flex items-center gap-3 text-sm">
               <span className="text-destructive">Couldn't load your responses.</span>
               <Button size="sm" variant="outline" onClick={() => void refetch()}>Retry</Button>
@@ -181,7 +181,7 @@ function MyClaims({ userId }: { userId: number }) {
           </Card>
         )}
         {claims && claims.length === 0 && (
-          <Card size="sm" className="rounded-xl shadow-none ring-border">
+          <Card size="sm">
             <CardContent className="text-sm text-muted-foreground">
               You haven't responded to anything yet.{' '}
               <Link to="/" className="font-bold no-underline">Browse reports →</Link>
@@ -189,7 +189,7 @@ function MyClaims({ userId }: { userId: number }) {
           </Card>
         )}
         {claims?.map((claim) => (
-          <Card key={claim.id} size="sm" className="rounded-xl shadow-none ring-border">
+          <Card key={claim.id} size="sm">
             <CardContent>
               <div className="flex flex-wrap items-center gap-2">
                 <Link

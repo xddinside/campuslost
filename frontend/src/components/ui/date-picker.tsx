@@ -51,7 +51,7 @@ function DatePicker({
             aria-required={required}
             disabled={disabled}
             className={cn(
-              'h-11 w-full justify-between rounded-lg border-[var(--border)] bg-[var(--card)] px-3 text-left text-sm font-normal dark:bg-[var(--card)]',
+              'h-11 w-full justify-between rounded-xl border border-input bg-card px-3.5 text-left text-sm font-normal hover:border-muted-foreground/35',
               !selectedDate && 'text-[var(--muted-foreground)]',
               className,
             )}
@@ -61,7 +61,7 @@ function DatePicker({
           </Button>
         }
       />
-      <PopoverContent className="w-auto rounded-xl p-0" align="start">
+      <PopoverContent className="w-auto rounded-2xl p-0" align="start">
         <Calendar
           mode="single"
           selected={selectedDate}

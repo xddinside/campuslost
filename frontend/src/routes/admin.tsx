@@ -102,12 +102,12 @@ function AdminPage() {
       )}
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
         {cards.map(([label, value]) => (
-          <Card key={label} className="gap-0 rounded-xl py-0 text-center shadow-none ring-border">
+          <Card key={label} className="gap-0 py-0 text-center">
             <CardContent className="p-5">
-              <div className="display-title text-3xl font-bold text-primary">
+              <div className="display-title text-[1.75rem] font-bold tracking-[-0.03em] text-foreground tabular-nums">
                 {value ?? '—'}
               </div>
-              <div className="island-kicker mt-1">{label}</div>
+              <div className="mt-0.5 text-[0.8125rem] text-muted-foreground">{label}</div>
             </CardContent>
           </Card>
         ))}
@@ -117,7 +117,7 @@ function AdminPage() {
         <p className="text-sm text-muted-foreground">Checking your account…</p>
       )}
 
-      <Card className="gap-0 rounded-xl py-0 shadow-none ring-border">
+      <Card className="gap-0 overflow-hidden py-0">
         <Table>
           <TableHeader>
             <TableRow>

@@ -115,7 +115,7 @@ function ReportPage() {
               }}
               variant="default"
               spacing={1}
-              className="w-full rounded-2xl border border-border bg-muted p-1.5"
+              className="w-full rounded-full bg-fill p-1"
             >
               {([
                 ['LOST', 'I lost something'],
@@ -124,7 +124,7 @@ function ReportPage() {
                 <ToggleGroupItem
                   key={value}
                   value={value}
-                  className="h-10 flex-1 rounded-lg px-4 text-sm font-bold text-muted-foreground hover:bg-card/60 hover:text-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm aria-pressed:hover:bg-card"
+                  className="h-10 flex-1 rounded-full px-4 text-sm font-medium text-muted-foreground hover:text-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm aria-pressed:hover:bg-card"
                 >
                   {label}
                 </ToggleGroupItem>
@@ -240,15 +240,15 @@ function ReportPage() {
 
             <div className="flex gap-3">
               <Button
-                className="h-10 rounded-lg px-6"
+                className="h-11 px-7"
                 type="submit"
                 disabled={mutation.isPending || photoBusy || !questionValidity.valid}
               >
                 {mutation.isPending ? 'Posting…' : 'Post report'}
               </Button>
               <Button
-                variant="outline"
-                className="h-10 rounded-lg"
+                variant="ghost"
+                className="h-11"
                 type="button"
                 onClick={() => router.history.back()}
               >

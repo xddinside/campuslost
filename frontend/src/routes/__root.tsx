@@ -34,7 +34,7 @@ function NotFound() {
       <p className="mb-6 text-sm text-muted-foreground">
         That page doesn’t exist. It may have been moved or the link is wrong.
       </p>
-      <Link to="/" className="nav-link is-active">
+      <Link to="/" className="nav-link">
         Back to browse
       </Link>
     </main>

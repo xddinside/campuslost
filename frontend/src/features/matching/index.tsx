@@ -50,28 +50,28 @@ export function MatchPanel({ item }: MatchPanelProps) {
   const sourceIsLost = item.type === 'LOST'
 
   return (
-    <Card className="overflow-hidden rounded-xl shadow-none ring-border">
+    <Card className="overflow-hidden">
       <CardContent className="p-0">
-        <header className="border-b border-border bg-muted/50 px-5 py-4">
+        <header className="border-b border-hairline bg-fill px-6 py-5">
           <div className="flex items-center gap-2">
             <Sparkle aria-hidden="true" size={18} weight="fill" className="text-[var(--primary)]" />
             <p className="island-kicker m-0">Possible matches</p>
             {isOpen && data && matches.length > 0 && (
-              <span className="ml-auto rounded-full bg-card px-2 py-0.5 text-xs font-bold tabular-nums text-muted-foreground ring-1 ring-border">
+              <span className="ml-auto rounded-full bg-card px-2.5 py-1 text-xs font-semibold tabular-nums text-muted-foreground ring-1 ring-hairline">
                 {matches.length} {matches.length === 1 ? 'match' : 'matches'}
               </span>
             )}
           </div>
-          <h2 className="mt-1 text-base font-bold text-foreground">
+          <h2 className="mt-1.5 text-[15px] font-semibold tracking-[-0.01em] text-foreground">
             {sourceIsLost ? 'Found reports that may be yours' : 'Lost reports that may describe this item'}
           </h2>
-          <p className="m-0 mt-1 text-xs text-muted-foreground">
+          <p className="m-0 mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">
             Ranked by a transparent similarity score across description, category,
             location and date. A score never approves a claim or proves ownership.
           </p>
         </header>
 
-        <div className="grid gap-3 px-5 py-4">
+        <div className="grid gap-3 px-6 py-5">
           {isOpen && (
             <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
               {isLoading
@@ -85,8 +85,8 @@ export function MatchPanel({ item }: MatchPanelProps) {
           )}
 
           {!isOpen && (
-            <div className="grid justify-items-start gap-2 rounded-xl border border-dashed border-border bg-muted/30 p-4">
-              <span className="grid size-9 place-items-center rounded-full bg-card text-muted-foreground ring-1 ring-border">
+            <div className="grid justify-items-start gap-2 rounded-2xl bg-fill p-5">
+              <span className="grid size-10 place-items-center rounded-full bg-card text-muted-foreground shadow-sm ring-1 ring-hairline">
                 <PauseCircle aria-hidden="true" size={18} />
               </span>
               <p className="m-0 text-sm font-bold text-foreground">Matching is paused</p>
@@ -130,8 +130,8 @@ export function MatchPanel({ item }: MatchPanelProps) {
           )}
 
           {isOpen && !isLoading && !isError && matches.length === 0 && (
-            <div className="grid justify-items-start gap-2 rounded-xl border border-dashed border-border bg-muted/30 p-4">
-              <span className="grid size-9 place-items-center rounded-full bg-card text-muted-foreground ring-1 ring-border">
+            <div className="grid justify-items-start gap-2 rounded-2xl bg-fill p-5">
+              <span className="grid size-10 place-items-center rounded-full bg-card text-muted-foreground shadow-sm ring-1 ring-hairline">
                 <MagnifyingGlass aria-hidden="true" size={18} />
               </span>
               <p className="m-0 text-sm font-bold text-foreground">No likely matches yet</p>
@@ -175,8 +175,8 @@ function MatchCard({
   const search = sourceIsLost ? { lostReportId: sourceItemId } : {}
 
   return (
-    <article className="grid gap-3 rounded-xl border border-border bg-card p-3.5 sm:grid-cols-[64px_minmax(0,1fr)]">
-      <div className="size-16 overflow-hidden rounded-lg bg-muted ring-1 ring-border">
+    <article className="grid gap-4 rounded-2xl bg-fill p-4 sm:grid-cols-[64px_minmax(0,1fr)]">
+      <div className="size-16 overflow-hidden rounded-xl bg-card ring-1 ring-hairline">
         {candidate.photoUrl ? (
           <img
             src={candidate.photoUrl}
@@ -219,15 +219,15 @@ function MatchCard({
           <span
             className={`shrink-0 rounded-full px-2.5 py-1 text-center ring-1 ${tone.badge}`}
           >
-            <span className="block text-sm font-black leading-none tabular-nums">{match.score}</span>
-            <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-wide">
+            <span className="block text-sm font-bold leading-none tracking-[-0.01em] tabular-nums">{match.score}</span>
+            <span className="mt-0.5 block text-[9.5px] font-semibold uppercase tracking-[0.06em]">
               similarity
             </span>
           </span>
         </div>
 
         <div className="mt-2.5">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted" aria-hidden="true">
+          <div className="h-1 w-full overflow-hidden rounded-full bg-foreground/8" aria-hidden="true">
             <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${match.score}%` }} />
           </div>
           <p className={`m-0 mt-1 text-[11px] font-bold ${tone.text}`}>{tone.label}</p>
@@ -277,23 +277,23 @@ function similarityTone(score: number) {
   if (score >= 75) {
     return {
       label: 'Strong similarity',
-      badge: 'bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-200 dark:ring-emerald-900',
-      bar: 'bg-emerald-500',
-      text: 'text-emerald-700 dark:text-emerald-300',
+      badge: 'bg-success/12 text-success-foreground ring-success/25',
+      bar: 'bg-success',
+      text: 'text-success-foreground',
     }
   }
   if (score >= 60) {
     return {
       label: 'Good similarity',
-      badge: 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900',
-      bar: 'bg-amber-500',
-      text: 'text-amber-700 dark:text-amber-300',
+      badge: 'bg-warning/14 text-warning-foreground ring-warning/25',
+      bar: 'bg-warning',
+      text: 'text-warning-foreground',
     }
   }
   return {
     label: 'Possible similarity',
-    badge: 'bg-muted text-foreground ring-border',
-    bar: 'bg-[var(--primary)]',
+    badge: 'bg-card text-muted-foreground ring-hairline',
+    bar: 'bg-primary/60',
     text: 'text-muted-foreground',
   }
 }

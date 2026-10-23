@@ -1,10 +1,9 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
-import { MagnifyingGlass, X } from '@phosphor-icons/react'
+import { CaretRight, MagnifyingGlass, Package, X } from '@phosphor-icons/react'
 import { Alert, AlertDescription } from '#/components/ui/alert.tsx'
 import { Button } from '#/components/ui/button.tsx'
-import { Card, CardContent } from '#/components/ui/card.tsx'
 import { Input } from '#/components/ui/input.tsx'
 import {
   Select,
@@ -131,10 +130,11 @@ function BrowsePage() {
 
   return (
     <main className="page-wrap pb-10">
-      <section className="browse-intro">
+      <section className="browse-intro rise-in">
         <div>
+          <p className="browse-kicker">Campus lost &amp; found</p>
           <h1 className="browse-title">Find what went missing.</h1>
-          <p className="mb-0 mt-3 max-w-xl text-[var(--muted-foreground)]">
+          <p className="browse-sub">
             Search campus reports or post an item so its owner can find it.
             Found something? Leave identifying details out of the public description.
           </p>
@@ -152,13 +152,13 @@ function BrowsePage() {
           }
           aria-label="Report type"
         >
-          <TabsList className="filter-tabs h-11 w-full rounded-lg p-1">
+          <TabsList className="filter-tabs h-10 w-full">
             {([
               ['ALL', 'All'],
               ['LOST', 'Lost'],
               ['FOUND', 'Found'],
             ] as const).map(([value, label]) => (
-              <TabsTrigger key={value} value={value} className="h-full px-3">
+              <TabsTrigger key={value} value={value} className="h-full px-4">
                 {label}
               </TabsTrigger>
             ))}
@@ -172,7 +172,7 @@ function BrowsePage() {
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <Input
-            className="h-11 rounded-lg border-border bg-card pl-9 pr-3"
+            className="h-11 pl-9 pr-3"
             aria-label="Search reports"
             placeholder="Search reports"
             value={q}
@@ -181,7 +181,7 @@ function BrowsePage() {
         </div>
 
         <Input
-          className="h-11 rounded-lg border-border bg-card px-3"
+          className="h-11"
           aria-label="Filter by location"
           placeholder="Location"
           value={location}
@@ -195,7 +195,7 @@ function BrowsePage() {
           }
         >
           <SelectTrigger
-            className="h-11 w-full rounded-lg border-border bg-card px-3"
+            className="h-11 w-full"
             aria-label="Filter by category"
           >
             <SelectValue>{category || 'All categories'}</SelectValue>
@@ -215,7 +215,7 @@ function BrowsePage() {
           onValueChange={(value) => value && update({ status: value as StatusFilter })}
         >
           <SelectTrigger
-            className="h-11 w-full rounded-lg border-border bg-card px-3"
+            className="h-11 w-full"
             aria-label="Filter by status"
           >
             <SelectValue>{statusLabel[status]}</SelectValue>
@@ -233,7 +233,7 @@ function BrowsePage() {
           <Button
             type="button"
             variant="ghost"
-            className="h-11 rounded-lg px-3"
+            className="h-10 px-3.5"
             onClick={() => {
               setQ('')
               setLocation('')
@@ -248,7 +248,7 @@ function BrowsePage() {
 
       <section>
         <div className="result-heading">
-          <h2 className="m-0 text-sm font-bold text-[var(--foreground)]">Recent reports</h2>
+          <h2>Recent reports</h2>
           {countLabel && (
             <span className="text-xs text-[var(--muted-foreground)]" aria-live="polite">
               {countLabel} · {statusLabel[status].toLowerCase()}
@@ -258,12 +258,13 @@ function BrowsePage() {
 
         {isLoading && (
           <div className="item-list" aria-label="Loading reports">
-            {Array.from({ length: 6 }).map((_, index) => (
+            {Array.from({ length: 5 }).map((_, index) => (
               <div className="item-row" key={index} aria-hidden="true">
+                <Skeleton className="size-16 rounded-2xl" />
                 <div className="w-full">
-                  <Skeleton className="mb-3 h-3 w-2/5 rounded" />
-                  <Skeleton className="mb-3 h-3 w-4/5 rounded" />
-                  <Skeleton className="h-3 w-1/2 rounded" />
+                  <Skeleton className="mb-2.5 h-3 w-2/5" />
+                  <Skeleton className="mb-2.5 h-3 w-4/5" />
+                  <Skeleton className="h-3 w-1/2" />
                 </div>
               </div>
             ))}
@@ -279,16 +280,19 @@ function BrowsePage() {
         )}
 
         {items && items.length === 0 && (
-          <Card className="gap-0 rounded-xl py-0 text-center shadow-none ring-border">
-            <CardContent className="py-10 text-sm text-muted-foreground">
-              <p className="m-0 font-bold text-foreground">No matching reports</p>
-              <p className="mb-0 mt-1">
+          <div className="item-list">
+            <div className="empty-state">
+              <span className="empty-state-icon">
+                <Package aria-hidden="true" size={22} />
+              </span>
+              <p className="m-0 text-sm font-semibold text-foreground">No matching reports</p>
+              <p className="m-0 max-w-sm text-[0.8125rem] text-muted-foreground">
                 {hasFilters
                   ? 'Try a broader search or clear one of the filters.'
                   : 'Nothing here yet. Report the first item.'}
               </p>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         )}
 
         {items && items.length > 0 && (
@@ -327,7 +331,7 @@ function ItemRow({ item }: { item: Item }) {
         </div>
         <p className="item-row-description line-clamp-1">{item.description}</p>
         <div className="item-row-meta">
-          <span className="item-row-type">
+          <span className="item-row-type" data-kind={item.type}>
             {item.type === 'LOST' ? 'Lost' : 'Found'}
           </span>
           <span aria-hidden="true">·</span>
@@ -346,6 +350,7 @@ function ItemRow({ item }: { item: Item }) {
           )}
         </div>
       </div>
+      <CaretRight aria-hidden="true" size={16} weight="bold" className="item-row-chevron" />
     </Link>
   )
 }

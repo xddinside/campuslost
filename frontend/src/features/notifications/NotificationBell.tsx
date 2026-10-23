@@ -88,11 +88,11 @@ export function NotificationBell(_props: NotificationBellProps) {
             variant="ghost"
             size="icon"
             aria-label={triggerLabel}
-            className="relative h-9 w-9 rounded-lg"
+            className="relative"
           >
             <Bell
               aria-hidden="true"
-              size={20}
+              size={19}
               weight={unreadCount > 0 ? 'fill' : 'regular'}
             />
             {unreadCount > 0 && (
@@ -111,9 +111,9 @@ export function NotificationBell(_props: NotificationBellProps) {
         align="end"
         side="bottom"
         sideOffset={8}
-        className="w-[min(92vw,25rem)] gap-0 overflow-hidden rounded-2xl p-0"
+        className="w-[min(92vw,24rem)] gap-0 overflow-hidden rounded-3xl p-0"
       >
-        <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+        <div className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
           <PopoverTitle className="text-sm font-bold">Notifications</PopoverTitle>
           {unreadCount > 0 ? (
             <Button
@@ -127,7 +127,7 @@ export function NotificationBell(_props: NotificationBellProps) {
               {markAllRead.isPending ? 'Marking…' : 'Mark all read'}
             </Button>
           ) : (
-            <span className="text-[0.6875rem] font-semibold text-muted-foreground">
+            <span className="text-[0.6875rem] font-medium text-muted-foreground">
               {query.isSuccess ? 'All caught up' : ''}
             </span>
           )}
@@ -146,16 +146,16 @@ export function NotificationBell(_props: NotificationBellProps) {
           ) : (
             <>
               {query.isError && (
-                <p role="status" className="m-0 border-b border-[var(--border)] px-4 py-2 text-xs text-muted-foreground">
+                <p role="status" className="m-0 border-b border-hairline px-4 py-2 text-xs text-muted-foreground">
                   Couldn't refresh just now. Showing the last loaded alerts.
                 </p>
               )}
               {(markRead.isError || markAllRead.isError) && (
-                <p role="alert" className="m-0 border-b border-[var(--border)] px-4 py-2 text-xs text-destructive">
+                <p role="alert" className="m-0 border-b border-hairline px-4 py-2 text-xs text-destructive">
                   Couldn't update read state. Try again.
                 </p>
               )}
-              <ul className="m-0 divide-y divide-[var(--border)] p-0">
+              <ul className="m-0 divide-y divide-hairline p-0">
                 {notifications.map((notification) => (
                   <li key={notification.id} className="list-none">
                     <NotificationRow
@@ -181,7 +181,7 @@ export function NotificationBell(_props: NotificationBellProps) {
                 ))}
               </ul>
               {query.hasNextPage && (
-                <div className="border-t border-[var(--border)] p-2">
+                <div className="border-t border-hairline p-2">
                   <Button
                     type="button"
                     variant="ghost"
@@ -212,9 +212,9 @@ function NotificationRow({
   const unread = !notification.readAt
   const className = [
     'flex gap-3 px-4 py-3 no-underline transition-colors',
-    'text-[var(--foreground)] hover:bg-[var(--muted)]',
+    'text-foreground hover:bg-fill',
     'focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none focus-visible:ring-inset',
-    unread ? 'bg-[color-mix(in_oklab,var(--primary)_5%,transparent)]' : '',
+    unread ? 'bg-primary/6' : '',
   ].join(' ')
 
   const content = (
@@ -229,8 +229,8 @@ function NotificationRow({
           <span
             className={`min-w-0 text-sm ${
               unread
-                ? 'font-bold text-[var(--foreground)]'
-                : 'font-semibold text-muted-foreground'
+                ? 'font-semibold text-foreground'
+                : 'font-medium text-muted-foreground'
             }`}
           >
             {notification.title}
@@ -245,7 +245,7 @@ function NotificationRow({
         <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">
           {notification.body}
         </span>
-        <span className="mt-1 block text-[0.6875rem] font-semibold text-muted-foreground">
+        <span className="mt-1 block text-[0.6875rem] font-medium text-muted-foreground">
           {timeAgo(notification.createdAt)}
         </span>
       </span>
@@ -277,17 +277,17 @@ function NotificationTypeIcon({ type }: { type: NotificationType }) {
 }
 
 function toneFor(type: NotificationType): string {
-  if (type === 'CLAIM_REJECTED') return 'bg-destructive/10 text-destructive'
+  if (type === 'CLAIM_REJECTED') return 'bg-destructive/12 text-destructive-foreground'
   if (type === 'MATCH_FOUND') return 'bg-primary/10 text-primary'
-  return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+  return 'bg-success/12 text-success-foreground'
 }
 
 function NotificationSkeleton() {
   return (
-    <div aria-hidden="true" className="divide-y divide-[var(--border)]">
+    <div aria-hidden="true" className="divide-y divide-hairline">
       {[0, 1, 2].map((row) => (
         <div key={row} className="flex gap-3 px-4 py-3">
-          <span className="mt-0.5 size-8 animate-pulse rounded-full bg-[var(--muted)]" />
+          <span className="mt-0.5 size-8 animate-pulse rounded-full bg-fill" />
           <span className="flex-1 space-y-2">
             <span className="block h-3 w-3/4 animate-pulse rounded bg-[var(--muted)]" />
             <span className="block h-3 w-full animate-pulse rounded bg-[var(--muted)]" />
@@ -302,8 +302,8 @@ function NotificationSkeleton() {
 function NotificationEmpty() {
   return (
     <div className="px-6 py-8 text-center">
-      <span className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-[var(--muted)] text-muted-foreground">
-        <Bell aria-hidden="true" size={20} />
+      <span className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-fill text-muted-foreground">
+        <Bell aria-hidden="true" size={19} />
       </span>
       <p className="m-0 text-sm font-bold">No new matches</p>
       <p className="m-0 mt-1 text-xs leading-relaxed text-muted-foreground">

@@ -64,7 +64,7 @@ function ClaimHistoryPage() {
   if (mine.isLoading || (claim === undefined && reviewers.isLoading)) {
     return (
       <main className="demo-page">
-        <Card className="rounded-xl shadow-none ring-border">
+        <Card>
           <CardContent className="text-sm text-muted-foreground">Loading the claim…</CardContent>
         </Card>
       </main>
@@ -139,7 +139,7 @@ function ClaimHistoryCard({ claim, userId }: { claim: Claim; userId: number }) {
           : 'This response is no longer active.'
 
   return (
-    <Card className="existing-claim-panel rounded-xl shadow-none ring-border">
+    <Card className="existing-claim-panel">
       <CardContent>
         <div className="existing-claim-heading">
           <h2>{heading}</h2>

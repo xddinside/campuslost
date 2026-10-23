@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CircleHalf, Moon, Sun } from '@phosphor-icons/react'
 import { Button } from '#/components/ui/button.tsx'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
@@ -65,20 +66,26 @@ export default function ThemeToggle() {
 
   const label =
     mode === 'auto'
-      ? 'Theme mode: auto (system). Click to switch to light mode.'
-      : `Theme mode: ${mode}. Click to switch mode.`
+      ? 'Theme: system. Switch to light mode.'
+      : `Theme: ${mode}. Switch mode.`
 
   return (
     <Button
       type="button"
-      variant="outline"
-      size="lg"
+      variant="ghost"
+      size="icon-sm"
       onClick={toggleMode}
       aria-label={label}
       title={label}
-      className="h-9 rounded-lg px-2.5 text-xs text-muted-foreground hover:text-foreground"
+      className="text-muted-foreground hover:text-foreground"
     >
-      {mode === 'auto' ? 'Theme: Auto' : mode === 'dark' ? 'Theme: Dark' : 'Theme: Light'}
+      {mode === 'auto' ? (
+        <CircleHalf aria-hidden="true" size={17} />
+      ) : mode === 'dark' ? (
+        <Moon aria-hidden="true" size={17} weight="fill" />
+      ) : (
+        <Sun aria-hidden="true" size={17} />
+      )}
     </Button>
   )
 }
