@@ -130,7 +130,6 @@ function MyReports({ userId }: { userId: number }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-lg"
                     render={<Link to="/items/$id/edit" params={{ id: String(item.id) }} />}
                   >
                     Edit
@@ -140,7 +139,6 @@ function MyReports({ userId }: { userId: number }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="rounded-lg"
                     disabled={resolve.isPending}
                     onClick={() => resolve.mutate(item.id)}
                   >

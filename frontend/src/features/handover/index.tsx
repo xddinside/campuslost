@@ -280,7 +280,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
                   {code.split('').map((digit, index) => (
                     <span
                       key={`${digit}-${index}`}
-                      className="flex size-11 items-center justify-center rounded-lg border border-border bg-card text-2xl font-bold tabular-nums shadow-sm"
+                      className="flex size-11 items-center justify-center rounded-xl bg-card text-[1.35rem] font-semibold tabular-nums shadow-sm ring-1 ring-hairline"
                     >
                       {digit}
                     </span>

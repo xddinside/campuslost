@@ -177,7 +177,7 @@ body {
   font-family: var(--font-sans);
   font-size: 0.9375rem;
   line-height: 1.55;
-  font-feature-settings: 'cv05', 'cv11';
+  font-feature-settings: 'cv05';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -283,19 +283,6 @@ pre code {
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: -0.005em;
-}
-
-.surface {
-  border-radius: var(--radius-2xl);
-  background: var(--card);
-  box-shadow: var(--shadow-card);
-  outline: 1px solid var(--hairline);
-  outline-offset: -1px;
-}
-
-.island-shell {
-  background: var(--card);
-  box-shadow: var(--shadow-card);
 }
 
 .rise-in {
@@ -910,7 +897,6 @@ pre code {
   line-height: 1.25;
 }
 
-.existing-claim-panel > * p,
 .existing-claim-panel p {
   color: var(--muted-foreground);
   font-size: 0.875rem;
