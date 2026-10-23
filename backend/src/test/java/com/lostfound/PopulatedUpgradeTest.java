@@ -25,6 +25,31 @@ class PopulatedUpgradeTest {
     private static final String URL =
             "jdbc:mariadb://localhost:3306/laf_migration_test?useUnicode=true&characterEncoding=utf8";
 
+    /** The newest versioned migration file — the version every run must reach. */
+    private static String expectedLatestVersion() {
+        try (java.util.stream.Stream<java.nio.file.Path> files =
+                     java.nio.file.Files.list(
+                             java.nio.file.Path.of("src/main/resources/db/migration"))) {
+            long latest = files
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith("V") && name.contains("__"))
+                    .mapToLong(name -> Long.parseLong(name.substring(1, name.indexOf("__"))))
+                    .max().orElseThrow();
+            return Long.toString(latest);
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("cannot list migration files", ex);
+        }
+    }
+
+    private static String latestAppliedVersion(JdbcTemplate jdbc) {
+        return jdbc.queryForObject("""
+                select version from flyway_schema_history
+                where version is not null
+                order by cast(version as unsigned) desc
+                limit 1
+                """, String.class);
+    }
+
     /**
      * The pre-Flyway prototype schema, populated: deliberate baseline adoption
      * must keep every row and apply the shared-fixes conversions — an approved
@@ -150,8 +175,7 @@ class PopulatedUpgradeTest {
         assertThat(jdbc.queryForObject("select count(*) from users", Long.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("select count(*) from items", Long.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("select count(*) from claims", Long.class)).isEqualTo(3);
-        assertThat(jdbc.queryForObject(
-                "select max(version) from flyway_schema_history", String.class)).isEqualTo("60");
+        assertThat(latestAppliedVersion(jdbc)).isEqualTo(expectedLatestVersion());
         assertThat(jdbc.queryForObject(
                 "select status from claims where id = ?", String.class, legacyClaim))
                 .isEqualTo("COMPLETED");
@@ -211,8 +235,7 @@ class PopulatedUpgradeTest {
         assertThat(jdbc.queryForObject("select count(*) from users", Long.class)).isEqualTo(2);
         assertThat(jdbc.queryForObject("select id from claims where id = ?", Long.class, firstClaim))
                 .isEqualTo(firstClaim);
-        assertThat(jdbc.queryForObject(
-                "select max(version) from flyway_schema_history", String.class)).isEqualTo("60");
+        assertThat(latestAppliedVersion(jdbc)).isEqualTo(expectedLatestVersion());
 
         // Reopen + re-resolve: a later COMPLETED claim on the same report now
         // fits the narrowed slots instead of hitting a duplicate-key wall.
