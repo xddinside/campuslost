@@ -64,17 +64,43 @@ echo "$before" | sed 's/^/    before /'
 echo "==> 4. Migrate with Flyway directly (no server, baseline adopted explicitly)"
 cd "$ROOT/backend"
 source "$ROOT/scripts/java-env.sh" >/dev/null
-timeout 300 ./mvnw -q org.flywaydb:flyway-maven-plugin:12.4.0:migrate \
+# The newest V-file this script must produce — a partial chain is a failure.
+expected=$(ls src/main/resources/db/migration/V*__*.sql \
+  | sed -E 's#.*/V([0-9]+)__.*#\1#' | sort -n | tail -1)
+expected_count=$(ls src/main/resources/db/migration/V*__*.sql | wc -l | tr -d ' ')
+flyway_log=$(mktemp)
+if ! timeout 300 ./mvnw -q org.flywaydb:flyway-maven-plugin:12.4.0:migrate \
   -Dflyway.url="$DB_URL" \
   -Dflyway.user=lostfound \
   -Dflyway.password=lostfound \
   -Dflyway.locations="filesystem:src/main/resources/db/migration" \
-  -Dflyway.baselineOnMigrate=true 2>&1 | grep -iE "migrat|baseline|error" | head -15 || true
+  -Dflyway.baselineOnMigrate=true >"$flyway_log" 2>&1; then
+  grep -iE "error|fail" "$flyway_log" | head -15 >&2 || true
+  echo "FAIL: Flyway migration of $DB did not complete." >&2
+  echo "    Restore from $BACKUP before retrying." >&2
+  rm -f "$flyway_log"
+  exit 1
+fi
+grep -iE "migrat|baseline" "$flyway_log" | head -15 || true
+rm -f "$flyway_log"
 
 echo "==> 5. Verify the same database was migrated and data preserved"
-version=$($MYSQL -N "$DB" -e "SELECT MAX(version) FROM flyway_schema_history;" 2>/dev/null || echo "")
-if [[ -z "$version" ]]; then
+# Require the complete, successful chain: every applied version present, no
+# failed rows, and the latest version equal to the newest migration file.
+state=$($MYSQL -N "$DB" -e "
+SELECT CONCAT(
+  COALESCE(MAX(CAST(version AS UNSIGNED)), 0), ':',
+  COALESCE(SUM(success = 0), 0), ':',
+  COUNT(version))
+FROM flyway_schema_history;" 2>/dev/null || echo "")
+if [[ -z "$state" ]]; then
   echo "FAIL: no flyway_schema_history in $DB — nothing was migrated." >&2
+  exit 1
+fi
+version="${state%%:*}"
+if [[ "$state" != "${expected}:0:${expected_count}" ]]; then
+  echo "FAIL: migration chain is incomplete or has failed rows (state=$state," >&2
+  echo "    expected=${expected}:0:${expected_count}). Restore from $BACKUP." >&2
   exit 1
 fi
 after=$($MYSQL -N "$DB" -e "
