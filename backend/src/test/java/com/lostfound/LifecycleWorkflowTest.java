@@ -13,6 +13,10 @@ import com.lostfound.service.ItemService;
 import com.lostfound.support.CleanFlywayConfig;
 import com.lostfound.support.TestFixtures;
 import com.lostfound.workflow.ClaimWorkflow;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
+import org.mockito.Mockito;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +25,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -38,7 +43,7 @@ class LifecycleWorkflowTest {
 
     @Autowired
     UserRepository users;
-    @Autowired
+    @MockitoSpyBean
     ItemRepository items;
     @Autowired
     ClaimRepository claims;
@@ -54,6 +59,8 @@ class LifecycleWorkflowTest {
     ItemService itemService;
     @Autowired
     PlatformTransactionManager txManager;
+    @PersistenceContext
+    EntityManager entityManager;
 
     /**
      * The ownership feature normally installs a real adapter. This class keeps
@@ -227,10 +234,11 @@ class LifecycleWorkflowTest {
     }
 
     /**
-     * Forced interleaving for the lock order: while a transaction holds the
-     * linked report's row lock, a create that needs both rows must be seen
-     * waiting on the lower id — it must never hold the target's lock while it
-     * waits. The probe only completes if the target lock is still free.
+     * Forced interleaving for the lock order, with an explicit handshake: the
+     * spied repository counts down the moment the creator invokes the lock
+     * query on the held (lower-id) report — no sleeps, no polling windows.
+     * At that point the target's lock must still be free, proving the creator
+     * waits on the lower id without holding the higher one.
      */
     @Test
     void linkedClaimCreateWaitsOnTheLowerIdLockWithoutHoldingTheTarget() throws Exception {
@@ -240,6 +248,7 @@ class LifecycleWorkflowTest {
 
         TransactionTemplate tx = new TransactionTemplate(txManager);
         CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch lockAttempt = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(3);
         try {
@@ -255,32 +264,34 @@ class LifecycleWorkflowTest {
             }));
             assertThat(held.await(10, TimeUnit.SECONDS)).isTrue();
 
+            // Arm the probe only after the holder's own lock call has passed,
+            // so the latch records the creator's lock attempt specifically.
+            // The answer performs the real blocking lock read on the caller's
+            // transaction — callRealMethod cannot dispatch an interface method.
+            Mockito.doAnswer(invocation -> {
+                lockAttempt.countDown();
+                return java.util.Optional.ofNullable(entityManager.find(Item.class,
+                        invocation.getArgument(0), LockModeType.PESSIMISTIC_WRITE));
+            }).when(items).findByIdForUpdate(lost.getId());
+
             Future<Claim> creator = pool.submit(() ->
                     workflow.create(bob, found.getId(), request("That is my bottle, the blue one.", lost.getId())));
 
-            // Handshake instead of a sleep: probe the target's lock repeatedly.
-            // Under the correct order the creator waits on the linked report
-            // while never touching the target, so every probe acquires it
-            // instantly. Under the old order the creator would hold the target
-            // while it waited on the linked report — the first probe after it
-            // grabbed the lock would then block until the holder released.
-            boolean targetHeldByCreator = false;
-            for (int i = 0; i < 40 && !targetHeldByCreator; i++) {
-                try {
-                    pool.submit(() -> tx.execute(status -> {
-                        items.findByIdForUpdate(found.getId());
-                        return null;
-                    })).get(400, TimeUnit.MILLISECONDS);
-                } catch (TimeoutException e) {
-                    targetHeldByCreator = true;
-                }
-                Thread.sleep(25);
-            }
-            assertThat(targetHeldByCreator)
-                    .as("create must wait on the linked report without holding the target lock")
+            // Handshake: the creator has invoked the blocking lock query on
+            // the linked report. It is now parked inside InnoDB lock wait.
+            assertThat(lockAttempt.await(10, TimeUnit.SECONDS))
+                    .as("creator must reach its lock attempt on the linked report")
+                    .isTrue();
+
+            // While it waits, the target's lock must still be free — one
+            // bounded acquisition proves the creator never took it first.
+            pool.submit(() -> tx.execute(status -> {
+                items.findByIdForUpdate(found.getId());
+                return null;
+            })).get(10, TimeUnit.SECONDS);
+            assertThat(creator.isDone())
+                    .as("creator must still be blocked on the held lock")
                     .isFalse();
-            // The creator is still genuinely blocked on the held lock.
-            assertThat(creator.isDone()).isFalse();
 
             release.countDown();
             assertThat(creator.get(15, TimeUnit.SECONDS)).isNotNull();
@@ -288,6 +299,7 @@ class LifecycleWorkflowTest {
         } finally {
             release.countDown();
             pool.shutdownNow();
+            Mockito.reset(items);
         }
     }
 

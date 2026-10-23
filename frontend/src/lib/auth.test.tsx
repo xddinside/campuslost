@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // React's act() warns without this flag in a test environment.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { AuthProvider, useAuth } from './auth'
-import { ApiError, api, readAuth, writeAuth } from './api'
+import { ApiError, api, clearAuth, readAuth, writeAuth } from './api'
 import type { AuthResponse, UserDto } from './types'
 
 vi.mock('./api', async (importOriginal) => {
@@ -46,11 +46,21 @@ function mountProvider() {
     </QueryClientProvider>,
   )
   return {
+    client,
     auth: () => {
       if (!ctx) throw new Error('provider not mounted')
       return ctx
     },
   }
+}
+
+/** What the browser fires in *this* tab when another tab writes storage. */
+function fireStorage(newValue: string | null) {
+  window.dispatchEvent(new window.StorageEvent('storage', {
+    key: 'laf.auth',
+    newValue,
+    storageArea: window.localStorage,
+  }))
 }
 
 describe('AuthProvider session restoration', () => {
@@ -171,5 +181,58 @@ describe('AuthProvider session restoration', () => {
 
     expect(readAuth()).toBeNull()
     expect(screen.getByTestId('who').textContent).toBe('none')
+  })
+
+  it('a login in another tab swaps this tab\'s identity and private cache', async () => {
+    writeAuth(session('alice-token', alice))
+    apiMock.mockResolvedValue(alice)
+    const { client } = mountProvider()
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByTestId('who').textContent).toBe(alice.email)
+    client.setQueryData(['private'], { secret: 'alice data' })
+
+    // Bob signs in elsewhere: shared storage holds his token now.
+    writeAuth(session('bob-token', bob))
+    apiMock.mockResolvedValue(bob)
+    await act(async () => { fireStorage(JSON.stringify(session('bob-token', bob))) })
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByTestId('who').textContent).toBe(bob.email)
+    expect(client.getQueryCache().findAll()).toHaveLength(0)
+  })
+
+  it('a logout in another tab clears this tab\'s identity and private cache', async () => {
+    writeAuth(session('alice-token', alice))
+    apiMock.mockResolvedValue(alice)
+    const { client } = mountProvider()
+    await act(async () => { await Promise.resolve() })
+    client.setQueryData(['private'], { secret: 'alice data' })
+
+    // The other tab logged out: the key is gone from shared storage.
+    clearAuth()
+    await act(async () => { fireStorage(null) })
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.getByTestId('who').textContent).toBe('none')
+    expect(readAuth()).toBeNull()
+    expect(client.getQueryCache().findAll()).toHaveLength(0)
+  })
+
+  it('ignores storage events for other keys', async () => {
+    writeAuth(session('alice-token', alice))
+    apiMock.mockResolvedValue(alice)
+    mountProvider()
+    await act(async () => { await Promise.resolve() })
+    const calls = apiMock.mock.calls.length
+
+    window.dispatchEvent(new window.StorageEvent('storage', {
+      key: 'unrelated',
+      newValue: '1',
+      storageArea: window.localStorage,
+    }))
+    await act(async () => { await Promise.resolve() })
+
+    expect(apiMock.mock.calls.length).toBe(calls)
+    expect(screen.getByTestId('who').textContent).toBe(alice.email)
   })
 })

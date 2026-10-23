@@ -23,6 +23,8 @@ import com.lostfound.handover.HandoverChallengeRepository;
 import com.lostfound.handover.HandoverCodeResponse;
 import com.lostfound.handover.HandoverService;
 import com.lostfound.workflow.ClaimWorkflow;
+import com.lostfound.matching.MatchRefreshService;
+import com.lostfound.matching.MatchRetryQueue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,8 +34,11 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -87,7 +92,16 @@ class NotificationApiTest {
     HandoverChallengeRepository challenges;
     @Autowired
     com.lostfound.matching.MatchCandidateRepository matchCandidates;
-
+    @Autowired
+    NotificationRetryRepository retries;
+    @Autowired
+    NotificationRetryService retryService;
+    @Autowired
+    MatchRefreshService refreshService;
+    @Autowired
+    JdbcTemplate jdbc;
+    @Autowired
+    PlatformTransactionManager txManager;
 
     TestFixtures fixtures;
     User alice;
@@ -98,6 +112,7 @@ class NotificationApiTest {
     void setUp() {
         fixtures = new TestFixtures(users, items, claims, photos, encoder);
         challenges.deleteAll();
+        retries.deleteAll();
         notifications.deleteAll();
         matchCandidates.deleteAll();
         fixtures.reset();
@@ -270,29 +285,25 @@ class NotificationApiTest {
         Claim second = fixtures.claim(foundTwo, bob, ClaimStatus.REJECTED);
         service.handleClaimChanged(claimEvent(second));
 
-        // A row committed with a future timestamp stands in for a concurrent
-        // arrival that must survive this read-all.
-        Notification later = directNotification(bob.getId(), NotificationType.CLAIM_APPROVED,
-                "claim:future:approved", first.getId(), Instant.now().plusSeconds(30));
-
         mvc.perform(post("/api/me/notifications/read-all")
                         .header("Authorization", bearer(bob)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.unreadCount").value(0));
 
-        mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.unreadCount").value(1))
-                .andExpect(jsonPath("$.notifications[0].id").value(later.getId()))
-                .andExpect(jsonPath("$.notifications[0].readAt").doesNotExist())
-                .andExpect(jsonPath("$.notifications[1].readAt").exists());
+        // Both committed rows carry a real read timestamp; a fabricated future
+        // created_at is no longer part of the semantics.
+        assertThat(notifications.findAll())
+                .filteredOn(n -> n.getRecipientId().equals(bob.getId()))
+                .hasSize(2)
+                .allSatisfy(n -> assertThat(n.getReadAt()).isNotNull());
 
+        // A delivery committed after the read-all stays unread.
         Item foundThree = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Umbrella");
         Claim third = fixtures.claim(foundThree, bob, ClaimStatus.APPROVED);
         service.handleClaimChanged(claimEvent(third));
         mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.unreadCount").value(2));
+                .andExpect(jsonPath("$.unreadCount").value(1));
     }
 
     /**
@@ -359,6 +370,140 @@ class NotificationApiTest {
                 .andExpect(jsonPath("$.unreadCount").value(1))
                 .andExpect(jsonPath("$.notifications[0].id").value(after.getId()))
                 .andExpect(jsonPath("$.notifications[0].claimId").value(second.getId()));
+    }
+
+    /**
+     * A delivery whose INSERT is still uncommitted must survive a read-all:
+     * read-all snapshots the visible ids first, so it neither waits on the
+     * row lock nor marks the row once that transaction commits.
+     */
+    @Test
+    void readAllLeavesDeliveriesCommittedAfterItsSnapshotUnread() throws Exception {
+        Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Slow delivery");
+        Claim claim = fixtures.claim(found, bob, ClaimStatus.APPROVED);
+        service.handleClaimChanged(claimEvent(claim));
+        long committedId = notifications.findAll().stream()
+                .filter(n -> n.getRecipientId().equals(bob.getId()))
+                .findFirst().orElseThrow().getId();
+
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        CountDownLatch inserted = new CountDownLatch(1);
+        CountDownLatch commit = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Long> delivery = pool.submit(() -> tx.execute(status -> {
+                Notification row = directNotification(bob.getId(), NotificationType.CLAIM_APPROVED,
+                        "claim:late:approved", claim.getId(), Instant.now());
+                notifications.flush();
+                inserted.countDown();
+                try {
+                    commit.await(15, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return row.getId();
+            }));
+            assertThat(inserted.await(10, TimeUnit.SECONDS))
+                    .as("the uncommitted insert must be in flight before read-all runs")
+                    .isTrue();
+
+            // Runs while the insert above is uncommitted: it must return
+            // without waiting on the row lock, and the late row must stay
+            // unread once the delivery commits.
+            pool.submit(() -> {
+                service.markAllRead(bob);
+                return null;
+            }).get(10, TimeUnit.SECONDS);
+
+            commit.countDown();
+            Long lateId = delivery.get(10, TimeUnit.SECONDS);
+
+            assertThat(notifications.findById(committedId).orElseThrow().getReadAt()).isNotNull();
+            assertThat(notifications.findById(lateId).orElseThrow().getReadAt())
+                    .as("a delivery committed after the read-all stays unread")
+                    .isNull();
+        } finally {
+            commit.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    /**
+     * A delivery that throws is retained and replayed by the scheduled drain;
+     * the upsert dedupe keys keep the replay idempotent. A failed match
+     * delivery also re-enters the matching retry queue.
+     */
+    @Test
+    void failedDeliveriesAreRetainedAndRetried() {
+        Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Retry me");
+        Claim claim = fixtures.claim(found, bob, ClaimStatus.APPROVED);
+        ClaimChangedEvent claimEvent = claimEvent(claim);
+        Item lost = fixtures.item(carol, ItemType.LOST, ItemStatus.OPEN, "Lost scarf");
+        MatchCandidateEntity candidate = new MatchCandidateEntity();
+        candidate.setLostItem(lost);
+        candidate.setFoundItem(found);
+        candidate.setLostItemVersion(lost.getVersion());
+        candidate.setFoundItemVersion(found.getVersion());
+        candidate.setScore(88);
+        candidate.setReasons("same category");
+        matchCandidates.save(candidate);
+        MatchCandidatesChangedEvent matchEvent = new MatchCandidatesChangedEvent(
+                lost.getId(), lost.getVersion(), List.of());
+
+        // A real service instance whose two delivery entry points fail once.
+        NotificationService flaky = new NotificationService(
+                notifications, items, claims, matchCandidates, jdbc) {
+            private final java.util.concurrent.atomic.AtomicBoolean claimArmed =
+                    new java.util.concurrent.atomic.AtomicBoolean(true);
+            private final java.util.concurrent.atomic.AtomicBoolean matchArmed =
+                    new java.util.concurrent.atomic.AtomicBoolean(true);
+
+            @Override
+            public void handleClaimChanged(ClaimChangedEvent e) {
+                if (claimArmed.getAndSet(false)) {
+                    throw new RuntimeException("forced delivery failure");
+                }
+                super.handleClaimChanged(e);
+            }
+
+            @Override
+            public void handleMatchSnapshot(MatchCandidatesChangedEvent e) {
+                if (matchArmed.getAndSet(false)) {
+                    throw new RuntimeException("forced delivery failure");
+                }
+                super.handleMatchSnapshot(e);
+            }
+        };
+        MatchRetryQueue matchQueue = new MatchRetryQueue(refreshService, 20);
+        NotificationEventListener listener =
+                new NotificationEventListener(flaky, retryService, matchQueue);
+
+        listener.onClaimChanged(claimEvent);
+        listener.onMatchCandidatesChanged(matchEvent);
+
+        assertThat(retries.findAll())
+                .as("both failed deliveries must be retained for retry")
+                .hasSize(2);
+        assertThat(matchQueue.size())
+                .as("a swallowed match failure must re-enter matching retries")
+                .isEqualTo(1);
+
+        // The next drain replays both through the real delivery path.
+        retryService.drain();
+
+        assertThat(retries.findAll()).isEmpty();
+        assertThat(notifications.findAll())
+                .filteredOn(n -> n.getRecipientId().equals(bob.getId())
+                        && n.getType() == NotificationType.CLAIM_APPROVED
+                        && claim.getId().equals(n.getClaimId()))
+                .hasSize(1);
+        assertThat(notifications.findAll())
+                .filteredOn(n -> n.getType() == NotificationType.MATCH_FOUND)
+                .hasSize(2);
+
+        // A second drain is a no-op: retries are deleted, upserts dedupe.
+        retryService.drain();
+        assertThat(notifications.findAll()).hasSize(3);
     }
 
     @Test
