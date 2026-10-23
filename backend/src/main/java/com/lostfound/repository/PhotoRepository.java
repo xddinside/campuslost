@@ -17,6 +17,9 @@ public interface PhotoRepository extends JpaRepository<Photo, String> {
 
     List<Photo> findByAttachedItemIdIsNullAndCreatedAtBefore(Instant before);
 
+    @Query("select p.id from Photo p where p.attachedItemId is null and p.createdAt < :before")
+    List<String> findUnattachedIdsCreatedBefore(@Param("before") Instant before);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Photo p where p.id = :id")
     Optional<Photo> findByIdForUpdate(@Param("id") String id);

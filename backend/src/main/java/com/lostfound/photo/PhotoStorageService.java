@@ -298,10 +298,12 @@ public class PhotoStorageService {
         int removed = 0;
         List<Path> files = new ArrayList<>();
         Instant cutoff = Instant.now().minus(olderThanHours, ChronoUnit.HOURS);
-        for (Photo candidate : photoRepository.findByAttachedItemIdIsNullAndCreatedAtBefore(cutoff)) {
-            // Lock each row and re-check before deleting: an attach that
-            // committed meanwhile must win instead of tripping the FK.
-            Photo photo = photoRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+        // Select ids only: loading entities first would cache them, and the
+        // lock query can then return a row whose attachedItemId is already
+        // stale against a concurrent attach. Loading under the lock always
+        // reads the committed state.
+        for (String id : photoRepository.findUnattachedIdsCreatedBefore(cutoff)) {
+            Photo photo = photoRepository.findByIdForUpdate(id).orElse(null);
             if (photo == null || photo.getAttachedItemId() != null) {
                 continue;
             }

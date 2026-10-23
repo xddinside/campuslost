@@ -22,11 +22,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                    or (exists (select 1 from Item l
                                where l.id = n.lostItemId
                                  and l.deletedAt is null
-                                 and l.status = :openStatus)
+                                 and l.status = :openStatus
+                                 and l.version = n.lostItemVersion)
                        and exists (select 1 from Item f
                                    where f.id = n.foundItemId
                                      and f.deletedAt is null
-                                     and f.status = :openStatus)))
+                                     and f.status = :openStatus
+                                     and f.version = n.foundItemVersion)))
             """)
     Optional<Notification> findVisibleByIdAndRecipientId(@Param("id") Long id,
                                                           @Param("recipientId") Long recipientId,
@@ -46,11 +48,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                    or (exists (select 1 from Item l
                                where l.id = n.lostItemId
                                  and l.deletedAt is null
-                                 and l.status = :openStatus)
+                                 and l.status = :openStatus
+                                 and l.version = n.lostItemVersion)
                        and exists (select 1 from Item f
                                    where f.id = n.foundItemId
                                      and f.deletedAt is null
-                                     and f.status = :openStatus)))
+                                     and f.status = :openStatus
+                                     and f.version = n.foundItemVersion)))
             order by n.id desc
             """)
     List<Notification> findVisiblePage(@Param("recipientId") Long recipientId,
@@ -68,11 +72,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                    or (exists (select 1 from Item l
                                where l.id = n.lostItemId
                                  and l.deletedAt is null
-                                 and l.status = :openStatus)
+                                 and l.status = :openStatus
+                                 and l.version = n.lostItemVersion)
                        and exists (select 1 from Item f
                                    where f.id = n.foundItemId
                                      and f.deletedAt is null
-                                     and f.status = :openStatus)))
+                                     and f.status = :openStatus
+                                     and f.version = n.foundItemVersion)))
             """)
     long countVisibleUnread(@Param("recipientId") Long recipientId,
                             @Param("matchType") NotificationType matchType,
@@ -115,11 +121,13 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                    or (exists (select 1 from items l
                                where l.id = notifications.lost_item_id
                                  and l.deleted_at is null
-                                 and l.status = 'OPEN')
+                                 and l.status = 'OPEN'
+                                 and l.version = notifications.lost_item_version)
                        and exists (select 1 from items f
                                    where f.id = notifications.found_item_id
                                      and f.deleted_at is null
-                                     and f.status = 'OPEN')))
+                                     and f.status = 'OPEN'
+                                     and f.version = notifications.found_item_version)))
             """, nativeQuery = true)
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     int markAllRead(@Param("recipientId") Long recipientId,
