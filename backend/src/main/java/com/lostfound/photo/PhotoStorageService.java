@@ -13,25 +13,21 @@ import com.lostfound.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -55,39 +51,29 @@ public class PhotoStorageService {
     private final ItemRepository itemRepository;
     private final UserRepository userRepository;
     private final PhotoUploadRepository photoUploadRepository;
-    private final Path root;
+    private final PhotoBlobStore store;
     private final long maxBytes;
     private final int maxUploadsPerDay;
-    private final boolean available;
 
     public PhotoStorageService(PhotoRepository photoRepository,
                                ItemRepository itemRepository,
                                UserRepository userRepository,
                                PhotoUploadRepository photoUploadRepository,
-                               @Value("${app.photos.directory:uploads}") String directory,
+                               PhotoBlobStore store,
                                @Value("${app.photos.max-bytes:5242880}") long maxBytes,
                                @Value("${app.photos.max-uploads-per-day:20}") int maxUploadsPerDay) {
         this.photoRepository = photoRepository;
         this.itemRepository = itemRepository;
         this.userRepository = userRepository;
         this.photoUploadRepository = photoUploadRepository;
-        this.root = Path.of(directory).toAbsolutePath().normalize();
+        this.store = store;
         this.maxBytes = maxBytes;
         this.maxUploadsPerDay = maxUploadsPerDay;
-        boolean ok;
-        try {
-            Files.createDirectories(root);
-            ok = true;
-        } catch (IOException ex) {
-            log.error("Photo directory {} is unavailable: {}", root, ex.getMessage());
-            ok = false;
-        }
-        this.available = ok;
     }
 
     @Transactional
     public PhotoResponse upload(User user, MultipartFile file) {
-        if (!available) {
+        if (!store.available()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PHOTO_STORAGE_UNAVAILABLE",
                     "Photo storage is unavailable. Ask an administrator to check the server.");
         }
@@ -131,9 +117,9 @@ public class PhotoStorageService {
         String storedType = jpeg ? "image/jpeg" : "image/png";
         String id = UUID.randomUUID().toString();
         String storageName = id + "." + storageExtension;
-        Path target = root.resolve(storageName);
         int imageWidth;
         int imageHeight;
+        byte[] data;
         try {
             DECODE_PERMITS.acquire();
         } catch (InterruptedException ex) {
@@ -143,7 +129,8 @@ public class PhotoStorageService {
         }
         BufferedImage image = null;
         try (InputStream in = file.getInputStream();
-             ImageInputStream iis = ImageIO.createImageInputStream(in)) {
+             ImageInputStream iis = ImageIO.createImageInputStream(in);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             if (iis == null) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                         "That file is not a readable photo.");
@@ -174,23 +161,19 @@ public class PhotoStorageService {
                 }
                 // Re-encode decoded pixels so EXIF metadata, GPS, and embedded
                 // payloads never reach storage — still under the permit.
-                if (!ImageIO.write(image, storageExtension, target.toFile())) {
+                if (!ImageIO.write(image, storageExtension, out)) {
                     throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "PHOTO_STORAGE_FAILED",
                             "The photo could not be saved. Try again.");
                 }
                 imageWidth = image.getWidth();
                 imageHeight = image.getHeight();
-                // The row is not committed yet: if the transaction rolls back
-                // (metadata save or commit failure), the file must go with it.
-                registerRollbackCleanup(target);
+                data = out.toByteArray();
             } finally {
                 reader.dispose();
             }
         } catch (ApiException ex) {
-            deleteQuietly(target);
             throw ex;
         } catch (IOException | RuntimeException ex) {
-            deleteQuietly(target);
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PHOTO",
                     "That file is not a readable photo.");
         } finally {
@@ -201,9 +184,7 @@ public class PhotoStorageService {
         }
 
         try {
-            long size = Files.size(target);
-            if (size > maxBytes) {
-                Files.deleteIfExists(target);
+            if (data.length > maxBytes) {
                 throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE",
                         "The processed photo is larger than 5 MiB. Choose a smaller image.");
             }
@@ -212,20 +193,21 @@ public class PhotoStorageService {
             photo.setUploader(user);
             photo.setStorageName(storageName);
             photo.setContentType(storedType);
-            photo.setSizeBytes(size);
+            photo.setSizeBytes(data.length);
             photo.setWidth(imageWidth);
             photo.setHeight(imageHeight);
-            photoRepository.save(photo);
+            // Flush so the photos row exists before a blob insert that
+            // references it; filesystem storage is order-insensitive.
+            photoRepository.saveAndFlush(photo);
+            store.write(photo, data);
             PhotoUpload charge = new PhotoUpload();
             charge.setUploader(user);
             charge.setPhotoId(id);
             photoUploadRepository.save(charge);
             return new PhotoResponse(id, url(id));
         } catch (ApiException ex) {
-            deleteQuietly(target);
             throw ex;
-        } catch (IOException ex) {
-            deleteQuietly(target);
+        } catch (IOException | RuntimeException ex) {
             log.error("Could not store photo", ex);
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "PHOTO_STORAGE_FAILED",
                     "The photo could not be saved. Try again.");
@@ -263,13 +245,8 @@ public class PhotoStorageService {
             return;
         }
         photoRepository.findByIdForUpdate(photoId).ifPresent(photo -> {
-            Path file = root.resolve(photo.getStorageName()).normalize();
+            store.delete(photo);
             photoRepository.delete(photo);
-            // The file disappears only after the row removal commits, so a
-            // rollback can never leave a database reference to a deleted file.
-            if (file.startsWith(root)) {
-                deleteAfterCommit(file);
-            }
         });
     }
 
@@ -289,17 +266,21 @@ public class PhotoStorageService {
         if (!visible) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Photo not found.");
         }
-        Path file = root.resolve(photo.getStorageName()).normalize();
-        if (!file.startsWith(root) || !Files.isReadable(file)) {
+        Resource resource;
+        try {
+            resource = store.open(photo);
+        } catch (IOException ex) {
+            resource = null;
+        }
+        if (resource == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Photo not found.");
         }
-        return new PhotoFile(file, photo.getContentType(), photo.getSizeBytes());
+        return new PhotoFile(resource, photo.getContentType(), photo.getSizeBytes());
     }
 
     @Transactional
     public int cleanupUnattached(int olderThanHours) {
         int removed = 0;
-        List<Path> files = new ArrayList<>();
         Instant cutoff = Instant.now().minus(olderThanHours, ChronoUnit.HOURS);
         // Select ids only: loading entities first would cache them, and the
         // lock query can then return a row whose attachedItemId is already
@@ -310,23 +291,15 @@ public class PhotoStorageService {
             if (photo == null || photo.getAttachedItemId() != null) {
                 continue;
             }
-            Path file = root.resolve(photo.getStorageName()).normalize();
+            store.delete(photo);
             photoRepository.delete(photo);
-            if (file.startsWith(root)) {
-                files.add(file);
-            }
             removed++;
         }
-        files.forEach(PhotoStorageService::deleteAfterCommit);
         return removed;
     }
 
     public String url(String photoId) {
         return photoId == null ? null : "/api/photos/" + photoId;
-    }
-
-    public Path root() {
-        return root;
     }
 
     private static String extensionOf(String name) {
@@ -337,47 +310,6 @@ public class PhotoStorageService {
         return name.substring(dot + 1).toLowerCase(Locale.ROOT);
     }
 
-    /**
-     * A written file outlives its transaction only if the transaction commits.
-     * Registered the moment the file exists, so a rollback from the metadata
-     * save or commit never leaves an orphan the cleanup job cannot find.
-     */
-    private static void registerRollbackCleanup(Path path) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCompletion(int status) {
-                            if (status == STATUS_ROLLED_BACK) {
-                                deleteQuietly(path);
-                            }
-                        }
-                    });
-        }
-    }
-
-    private static void deleteAfterCommit(Path path) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(
-                    new TransactionSynchronization() {
-                        @Override
-                        public void afterCommit() {
-                            deleteQuietly(path);
-                        }
-                    });
-        } else {
-            deleteQuietly(path);
-        }
-    }
-
-    private static void deleteQuietly(Path path) {
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException ignored) {
-            // Best effort; the maintenance path reports leftovers later.
-        }
-    }
-
-    public record PhotoFile(Path path, String contentType, long size) {
+    public record PhotoFile(Resource resource, String contentType, long size) {
     }
 }

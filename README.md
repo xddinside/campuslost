@@ -65,8 +65,11 @@ pnpm audit
 ```
 
 The backend uses Flyway (`backend/src/main/resources/db/migration`) and
-Hibernate runs with `ddl-auto: validate`. Tests use
-`src/test/resources/application-test.yml` and the `lostfound_test` database.
+Hibernate runs with `ddl-auto: validate`. Migrations live in `common/` plus a
+dialect folder selected by `DB_VENDOR` (`mariadb` by default, `mysql` for
+MySQL 8 hosts) because V2 relies on MariaDB-only `IF NOT EXISTS` clauses.
+Tests use `src/test/resources/application-test.yml` and the `lostfound_test`
+database.
 
 ### Adopting a pre-Flyway database
 
@@ -131,12 +134,32 @@ Everything is environment-driven (see `backend/src/main/resources/application.ym
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` | local `lostfound` | Datasource |
-| `JWT_SECRET` | none, required | Token signing |
-| `APP_HANDOVER_HMAC_SECRET` | none | Handover tokens |
-| `APP_PHOTOS_DIR` | `backend/uploads` | Photo storage (git-ignored) |
+| `DB_VENDOR` | `mariadb` | Flyway dialect folder (`mysql` for MySQL 8) |
+| `JWT_SECRET` | none, required | Token signing (base64, ≥32 bytes decoded) |
+| `APP_HANDOVER_HMAC_SECRET` | none | Handover tokens (base64, ≥32 bytes decoded) |
+| `APP_PHOTOS_STORAGE` | `filesystem` | Photo bytes: `filesystem` or `database` |
+| `APP_PHOTOS_DIR` | `backend/uploads` | Photo storage dir for `filesystem` (git-ignored) |
 | `APP_CORS_ALLOWED_ORIGINS` | localhost + portless URL | Allowed browser origins |
-| `SERVER_PORT` | `8080` | API port |
+| `APP_DEMO_SEED` | `false` | Seed demo data (with `SPRING_PROFILES_ACTIVE=demo`) |
+| `PORT` / `SERVER_PORT` | `8080` | API port (`PORT` wins, e.g. on Render) |
 | `VITE_DEMO_MODE` | unset | Show demo credentials in the UI |
+
+## Deploy (Vercel + Render + Aiven)
+
+- **Database:** Aiven free MySQL 8. Use the JDBC URL form
+  `jdbc:mysql://<host>:<port>/lostfound?sslMode=REQUIRED` — Aiven's
+  `mysql://...?ssl-mode=REQUIRED` URI is for the mysql client, not JDBC.
+- **Backend:** `render.yaml` defines a free Docker web service
+  (`backend/Dockerfile`). Create it via Render → New → Blueprint, then set the
+  `sync: false` env vars: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`,
+  `JWT_SECRET`, `APP_HANDOVER_HMAC_SECRET`, `APP_CORS_ALLOWED_ORIGINS`
+  (the Vercel origin, e.g. `https://<app>.vercel.app`). The blueprint already
+  sets `DB_VENDOR=mysql`, `APP_PHOTOS_STORAGE=database`, and enables the demo
+  seed — remove `SPRING_PROFILES_ACTIVE`/`APP_DEMO_SEED` once real users exist.
+- **Frontend:** import `frontend/` as a Vercel project; Nitro is already in
+  `vite.config.ts`, so detection is automatic. `frontend/vercel.json` proxies
+  `/api/*` to the Render backend — edit the `destination` host if your Render
+  service is not named `campuslost-api`.
 
 ## Reset local data
 

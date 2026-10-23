@@ -28,7 +28,7 @@ class PopulatedUpgradeTest {
     /** The newest versioned migration file — the version every run must reach. */
     private static String expectedLatestVersion() {
         try (java.util.stream.Stream<java.nio.file.Path> files =
-                     java.nio.file.Files.list(
+                     java.nio.file.Files.walk(
                              java.nio.file.Path.of("src/main/resources/db/migration"))) {
             long latest = files
                     .map(path -> path.getFileName().toString())
@@ -164,7 +164,7 @@ class PopulatedUpgradeTest {
         // Deliberate adoption: baseline at V1, then apply everything after it.
         Flyway.configure()
                 .dataSource(ds)
-                .locations("classpath:db/migration")
+                .locations("classpath:db/migration/common", "classpath:db/migration/mariadb")
                 .baselineOnMigrate(true)
                 .cleanDisabled(false)
                 .load()
@@ -193,7 +193,7 @@ class PopulatedUpgradeTest {
         JdbcTemplate jdbc = new JdbcTemplate(ds);
         Flyway toSharedFixes = Flyway.configure()
                 .dataSource(ds)
-                .locations("classpath:db/migration")
+                .locations("classpath:db/migration/common", "classpath:db/migration/mariadb")
                 .baselineOnMigrate(false)
                 .cleanDisabled(false)
                 .target(MigrationVersion.fromVersion("40"))
@@ -225,7 +225,7 @@ class PopulatedUpgradeTest {
 
         Flyway.configure()
                 .dataSource(ds)
-                .locations("classpath:db/migration")
+                .locations("classpath:db/migration/common", "classpath:db/migration/mariadb")
                 .baselineOnMigrate(false)
                 .cleanDisabled(false)
                 .load()

@@ -65,15 +65,16 @@ echo "==> 4. Migrate with Flyway directly (no server, baseline adopted explicitl
 cd "$ROOT/backend"
 source "$ROOT/scripts/java-env.sh" >/dev/null
 # The newest V-file this script must produce — a partial chain is a failure.
-expected=$(ls src/main/resources/db/migration/V*__*.sql \
+# Shared migrations live in common/; the MariaDB dialect folder holds V2.
+expected=$(ls src/main/resources/db/migration/{common,mariadb}/V*__*.sql \
   | sed -E 's#.*/V([0-9]+)__.*#\1#' | sort -n | tail -1)
-expected_count=$(ls src/main/resources/db/migration/V*__*.sql | wc -l | tr -d ' ')
+expected_count=$(ls src/main/resources/db/migration/{common,mariadb}/V*__*.sql | wc -l | tr -d ' ')
 flyway_log=$(mktemp)
 if ! timeout 300 ./mvnw -q org.flywaydb:flyway-maven-plugin:12.4.0:migrate \
   -Dflyway.url="$DB_URL" \
   -Dflyway.user=lostfound \
   -Dflyway.password=lostfound \
-  -Dflyway.locations="filesystem:src/main/resources/db/migration" \
+  -Dflyway.locations="filesystem:src/main/resources/db/migration/common,filesystem:src/main/resources/db/migration/mariadb" \
   -Dflyway.baselineOnMigrate=true >"$flyway_log" 2>&1; then
   grep -iE "error|fail" "$flyway_log" | head -15 >&2 || true
   echo "FAIL: Flyway migration of $DB did not complete." >&2

@@ -2,7 +2,6 @@ package com.lostfound.photo;
 
 import com.lostfound.dto.PhotoResponse;
 import com.lostfound.model.User;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -40,6 +39,6 @@ public class PhotoController {
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Content-Disposition", "inline")
-                .body(new FileSystemResource(photo.path()));
+                .body(photo.resource());
     }
 }

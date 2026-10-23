@@ -1,0 +1,40 @@
+# Render blueprint: Spring Boot backend as a Docker web service on the free
+# plan. Create the service via "New > Blueprint" pointing at this repo, then
+# fill in the sync:false env vars in the dashboard (see README "Deploy").
+services:
+  - type: web
+    name: campuslost-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/items
+    envVars:
+      # MySQL 8 (e.g. Aiven free): selects the MySQL Flyway migrations.
+      - key: DB_VENDOR
+        value: mysql
+      # Render's disk is ephemeral; photo bytes live in the photo_blobs table.
+      - key: APP_PHOTOS_STORAGE
+        value: database
+      # Demo accounts (alice/bob/carol/dave@demo.dev) on a fresh database.
+      # Remove both keys once real users exist.
+      - key: SPRING_PROFILES_ACTIVE
+        value: demo
+      - key: APP_DEMO_SEED
+        value: "true"
+      # Fill these in the Render dashboard — never commit real values:
+      #   jdbc:mysql://<aiven-host>:<port>/lostfound?sslMode=REQUIRED
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # base64 of >=32 random bytes, e.g. `openssl rand -base64 48`.
+      - key: JWT_SECRET
+        sync: false
+      - key: APP_HANDOVER_HMAC_SECRET
+        sync: false
+      # Comma-separated exact origins, e.g. https://campuslost.vercel.app
+      - key: APP_CORS_ALLOWED_ORIGINS
+        sync: false
