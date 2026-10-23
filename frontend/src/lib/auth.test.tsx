@@ -34,9 +34,10 @@ function deferred<T>() {
 }
 
 function mountProvider() {
+  let ctx: ReturnType<typeof useAuth> | null = null
   function Probe() {
-    const { user, hydrated } = useAuth()
-    return <div data-testid="who">{hydrated ? user?.email ?? 'none' : 'loading'}</div>
+    ctx = useAuth()
+    return <div data-testid="who">{ctx.hydrated ? ctx.user?.email ?? 'none' : 'loading'}</div>
   }
   const client = new QueryClient()
   render(
@@ -44,6 +45,12 @@ function mountProvider() {
       <AuthProvider><Probe /></AuthProvider>
     </QueryClientProvider>,
   )
+  return {
+    auth: () => {
+      if (!ctx) throw new Error('provider not mounted')
+      return ctx
+    },
+  }
 }
 
 describe('AuthProvider session restoration', () => {
@@ -102,5 +109,67 @@ describe('AuthProvider session restoration', () => {
 
     expect(readAuth()?.token).toBe('alice-token')
     expect(screen.getByTestId('who').textContent).toBe(alice.email)
+  })
+
+  it('a delayed login cannot replace a newer registration session', async () => {
+    const aliceLogin = deferred<AuthResponse>()
+    apiMock.mockImplementation((path: string) =>
+      path === '/auth/login' ? aliceLogin.promise : Promise.resolve(session('bob-token', bob)))
+    const { auth } = mountProvider()
+
+    let loginDone: Promise<void>
+    let registerDone: Promise<void>
+    await act(async () => {
+      loginDone = auth().login(alice.email, 'demo123')
+      registerDone = auth().register('Bob Martins', bob.email, 'demo123')
+      await registerDone
+    })
+
+    // Alice's delayed response must never overwrite Bob's newer session.
+    await act(async () => { aliceLogin.resolve(session('alice-token', alice)) })
+    await act(async () => { await loginDone! })
+
+    expect(readAuth()?.token).toBe('bob-token')
+    expect(screen.getByTestId('who').textContent).toBe(bob.email)
+  })
+
+  it('a delayed login cannot replace a newer login either', async () => {
+    const slow = deferred<AuthResponse>()
+    apiMock.mockImplementation((path: string) =>
+      path === '/auth/login'
+        ? slow.promise
+        : Promise.reject(new Error('unexpected call ' + path)))
+    const { auth } = mountProvider()
+
+    let staleLogin: Promise<void>
+    let freshLogin: Promise<void>
+    await act(async () => {
+      staleLogin = auth().login(alice.email, 'demo123')
+    })
+    apiMock.mockImplementation(() => Promise.resolve(session('bob-token', bob)))
+    await act(async () => {
+      freshLogin = auth().login(bob.email, 'demo123')
+      await freshLogin
+    })
+    await act(async () => { slow.resolve(session('alice-token', alice)) })
+    await act(async () => { await staleLogin! })
+
+    expect(readAuth()?.token).toBe('bob-token')
+    expect(screen.getByTestId('who').textContent).toBe(bob.email)
+  })
+
+  it('a logout supersedes a login still in flight', async () => {
+    const slow = deferred<AuthResponse>()
+    apiMock.mockImplementation(() => slow.promise)
+    const { auth } = mountProvider()
+
+    let loginPromise: Promise<void>
+    await act(async () => { loginPromise = auth().login(alice.email, 'demo123') })
+    await act(async () => { await auth().logout() })
+    await act(async () => { slow.resolve(session('alice-token', alice)) })
+    await act(async () => { await loginPromise! })
+
+    expect(readAuth()).toBeNull()
+    expect(screen.getByTestId('who').textContent).toBe('none')
   })
 })

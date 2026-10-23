@@ -27,8 +27,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // adopting or clearing a session aborts it, and every outcome is checked
   // against the token still being current.
   const validationAbort = useRef<AbortController | null>(null)
+  // Login, registration, logout, and expiry all share one session generation:
+  // every authentication call captures the generation it started on, and an
+  // older response may never adopt over a newer session.
+  const sessionGen = useRef(0)
 
   const clearIdentity = useCallback(async () => {
+    sessionGen.current += 1
     validationAbort.current?.abort()
     clearAuth()
     setUser(null)
@@ -88,29 +93,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
   }, [clearIdentity])
 
-  const adoptSession = useCallback(async (response: AuthResponse) => {
+  const adoptSession = useCallback(async (response: AuthResponse, generation: number) => {
+    if (generation !== sessionGen.current) return
     validationAbort.current?.abort()
     await queryClient.cancelQueries()
     queryClient.clear()
+    // The generation can move while cache teardown was awaited — a newer
+    // login that landed meanwhile owns the session now.
+    if (generation !== sessionGen.current) return
     writeAuth(response)
     setUser(response.user)
     setSessionExpired(false)
   }, [queryClient])
 
   const login = useCallback(async (email: string, password: string) => {
+    const generation = ++sessionGen.current
     const response = await api<AuthResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
-    await adoptSession(response)
+    await adoptSession(response, generation)
   }, [adoptSession])
 
   const register = useCallback(async (name: string, email: string, password: string, phone?: string) => {
+    const generation = ++sessionGen.current
     const response = await api<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ name, email, password, phone: phone || null }),
     })
-    await adoptSession(response)
+    await adoptSession(response, generation)
   }, [adoptSession])
 
   const logout = useCallback(async () => {

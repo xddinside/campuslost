@@ -57,14 +57,25 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
     && (claim.status === 'APPROVED' || claim.status === 'COMPLETED'),
   )
 
-  const [code, setCode] = useState<string | null>(null)
-  const [codeExpiresAt, setCodeExpiresAt] = useState<string | null>(null)
+  // The issued code is tagged with the claim and the moment it arrived, so a
+  // delayed response or a stale status can never display — or erase — a code
+  // that belongs somewhere else.
+  const [issued, setIssued] = useState<{
+    claimId: number
+    code: string
+    expiresAt: string
+    issuedAt: number
+  } | null>(null)
+  const code = issued && issued.claimId === claim.id ? issued.code : null
+  const codeExpiresAt = issued && issued.claimId === claim.id ? issued.expiresAt : null
   const [isIssuing, setIsIssuing] = useState(false)
   const [cooldownUntil, setCooldownUntil] = useState(0)
   const [verifyCode, setVerifyCode] = useState('')
   const [verifyError, setVerifyError] = useState<string | null>(null)
   const [isVerifying, setIsVerifying] = useState(false)
   const [releaseReason, setReleaseReason] = useState('')
+  const [releaseError, setReleaseError] = useState<string | null>(null)
+  const [releaseOpen, setReleaseOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmedAt, setConfirmedAt] = useState<string | null>(null)
 
@@ -73,39 +84,57 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
     isLoading,
     isError: statusFailed,
     error: statusError,
+    refetch: refetchStatus,
+    dataUpdatedAt: statusUpdatedAt,
+    isRefetching: statusRefetching,
   } = useQuery({
     queryKey: queryKeys.account(user?.id ?? 0, 'claims', claim.id, 'handover'),
     queryFn: ({ signal }) => api<HandoverStatus>(`/claims/${claim.id}/handover`, { signal }),
     enabled: hydrated && canUse,
     staleTime: 0,
+    // The claimant can issue a code at any time; the finder must see the
+    // verify form appear without reloading the page.
+    refetchInterval: (query) =>
+      query.state.data?.state === 'COMPLETED' ? false : 10_000,
   })
 
   useEffect(() => {
-    setCode(null)
-    setCodeExpiresAt(null)
+    setIssued(null)
     setVerifyCode('')
     setVerifyError(null)
     setConfirmedAt(null)
+    setReleaseError(null)
   }, [claim.id, user?.id])
 
   useEffect(() => {
-    if (
-      code && ((now > 0 && codeExpiresAt !== null && Date.parse(codeExpiresAt) <= now)
-        || status?.state === 'LOCKED'
-        || status?.state === 'EXPIRED' || status?.state === 'COMPLETED')
-    ) {
-      setCode(null)
+    if (!issued) return
+    if (issued.expiresAt && Date.parse(issued.expiresAt) <= now) {
+      setIssued(null)
+      return
     }
-  }, [code, codeExpiresAt, status?.state, now])
+    // A terminal status only clears a visible code when the status response
+    // was fetched after that code was issued — a cached EXPIRED or LOCKED
+    // snapshot must not erase it.
+    if (statusUpdatedAt > issued.issuedAt
+        && (status?.state === 'LOCKED'
+          || status?.state === 'EXPIRED'
+          || status?.state === 'COMPLETED')) {
+      setIssued(null)
+    }
+  }, [issued, status?.state, statusUpdatedAt, now])
 
   async function issueCode() {
     setIsIssuing(true)
     try {
-      const issued = await api<HandoverCode>(`/claims/${claim.id}/handover/code`, {
+      const response = await api<HandoverCode>(`/claims/${claim.id}/handover/code`, {
         method: 'POST',
       })
-      setCode(issued.code)
-      setCodeExpiresAt(issued.expiresAt)
+      setIssued({
+        claimId: claim.id,
+        code: response.code,
+        expiresAt: response.expiresAt,
+        issuedAt: Date.now(),
+      })
       setCooldownUntil(Date.now() + 60_000)
       setError(null)
       onChanged()
@@ -131,7 +160,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
       })
       setConfirmedAt(result.verifiedAt)
       setVerifyCode('')
-      setCode(null)
+      setIssued(null)
       setVerifyError(null)
       setError(null)
       onChanged()
@@ -147,16 +176,28 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
     mutationFn: (reason: string) =>
       api(`/claims/${claim.id}/handover/release`, {
         method: 'POST',
-        body: JSON.stringify({ reason: reason.trim() }),
+        body: JSON.stringify({ reason }),
       }),
     onSuccess: () => {
-      setCode(null)
+      setIssued(null)
       setVerifyCode('')
+      setReleaseOpen(false)
+      setReleaseReason('')
+      setReleaseError(null)
       setError(null)
       onChanged()
     },
-    onError: (err) => setError(messageOf(err)),
+    onError: (err) => setReleaseError(messageOf(err)),
   })
+
+  function submitRelease() {
+    const reason = releaseReason.trim()
+    if (!reason) {
+      setReleaseError('A reason is required — the claimant sees it in their history.')
+      return
+    }
+    release.mutate(reason)
+  }
 
   if (!isFound || !canUse || !user) return null
 
@@ -204,7 +245,11 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
           </p>
           <p className="m-0 text-sm text-muted-foreground">
             {verifiedAt
-              ? `The pickup code was verified at ${formatFullTime(verifiedAt)}. The found report and linked lost report are both resolved.`
+              ? `The pickup code was verified at ${formatFullTime(verifiedAt)}. ${
+                  claim.lostReportId
+                    ? 'The found report and linked lost report are both resolved.'
+                    : 'The found report is now resolved.'
+                }`
               : 'This claim was resolved before pickup codes were introduced. No verified pickup was recorded for it.'}
           </p>
         </div>
@@ -308,7 +353,19 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
         {isReviewer && (
           <div className="grid gap-3">
             <div className="grid gap-1.5">
-              <p className="m-0 text-sm font-bold">{reviewerStateTitle(status?.state)}</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="m-0 text-sm font-bold">{reviewerStateTitle(status?.state)}</p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Refresh pickup status"
+                  onClick={() => void refetchStatus()}
+                  disabled={statusRefetching}
+                >
+                  <ArrowClockwise aria-hidden="true" size={14} />
+                </Button>
+              </div>
               <p className="m-0 text-xs text-muted-foreground">
                 {reviewerStateHint(status?.state, claim.claimantName)}
               </p>
@@ -380,7 +437,7 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
 
             <div className="h-px bg-border" />
 
-            <AlertDialog>
+            <AlertDialog open={releaseOpen} onOpenChange={setReleaseOpen}>
               <AlertDialogTrigger
                 render={
                   <Button variant="outline" disabled={release.isPending}>
@@ -400,23 +457,38 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
                 </AlertDialogHeader>
                 <div className="grid gap-2">
                   <Label htmlFor={`handover-release-${claim.id}`}>
-                    Reason (optional)
+                    Reason
                   </Label>
                   <Textarea
                     id={`handover-release-${claim.id}`}
                     value={releaseReason}
                     maxLength={500}
-                    onChange={(event) => setReleaseReason(event.target.value)}
+                    onChange={(event) => {
+                      setReleaseReason(event.target.value)
+                      setReleaseError(null)
+                    }}
                     placeholder="Owner did not arrive, could not verify the code…"
+                    aria-invalid={releaseError ? 'true' : undefined}
                   />
+                  {releaseError && (
+                    <p role="alert" className="m-0 text-xs font-bold text-destructive">
+                      {releaseError}
+                    </p>
+                  )}
                 </div>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Keep reservation</AlertDialogCancel>
                   <AlertDialogAction
                     variant="destructive"
-                    onClick={() => release.mutate(releaseReason)}
+                    disabled={release.isPending}
+                    onClick={(event) => {
+                      // The dialog stays open until the server accepts the
+                      // release, so a validation error can be corrected.
+                      event.preventDefault()
+                      submitRelease()
+                    }}
                   >
-                    Release reservation
+                    {release.isPending ? 'Releasing…' : 'Release reservation'}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

@@ -50,7 +50,10 @@ function ClaimHistoryPage() {
   })
 
   if (hydrated && !user) {
-    return <Navigate to="/login" search={{ redirect: `/claims/${claimId}` }} />
+    // Keep the validated search: without itemId a reviewer's history query
+    // stays disabled after login and the page can never find their claim.
+    const target = `/claims/${claimId}${itemId ? `?itemId=${itemId}` : ''}`
+    return <Navigate to="/login" search={{ redirect: target }} />
   }
 
   const id = Number(claimId)
@@ -103,7 +106,7 @@ function ClaimHistoryPage() {
         <ArrowLeft aria-hidden="true" size={18} weight="bold" />
         Back to my activity
       </Link>
-      <ClaimHistoryCard claim={claim} userId={user!.id} />
+      <ClaimHistoryCard key={`${user!.id}:${claim.id}`} claim={claim} userId={user!.id} />
     </main>
   )
 }

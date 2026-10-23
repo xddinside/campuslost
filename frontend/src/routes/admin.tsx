@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Navigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,21 +38,35 @@ function AdminPage() {
   const queryClient = useQueryClient()
   const isAdmin = hydrated && user?.role === 'ADMIN'
 
-  const { data: stats } = useQuery({
+  const {
+    data: stats,
+    isError: statsFailed,
+    error: statsError,
+    refetch: refetchStats,
+  } = useQuery({
     queryKey: queryKeys.adminStats(),
     queryFn: ({ signal }) => api<AdminStats>('/admin/stats', { signal }),
     enabled: isAdmin,
   })
 
-  const { data: items, isLoading, isError, error } = useQuery({
+  const { data: items, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.adminItems(),
     queryFn: ({ signal }) => api<Item[]>('/admin/items', { signal }),
     enabled: isAdmin,
   })
 
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
   const remove = useMutation({
     mutationFn: (id: number) => api<void>(`/items/${id}`, { method: 'DELETE' }),
-    onSuccess: async () => { await invalidateWorkflow(queryClient) },
+    onSuccess: async () => {
+      setRemoveError(null)
+      await invalidateWorkflow(queryClient)
+    },
+    onError: (err, id) => {
+      const title = items?.find((i) => i.id === id)?.title ?? `report ${id}`
+      setRemoveError(`Couldn't delete “${title}”: ${(err as Error).message}`)
+    },
   })
 
   if (hydrated && user?.role !== 'ADMIN') {
@@ -72,6 +87,22 @@ function AdminPage() {
     <main className="demo-page demo-page-wide">
       <p className="island-kicker mb-2">Admin</p>
       <h1 className="demo-title mb-8">Dashboard</h1>
+
+      {statsFailed && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription className="flex items-center gap-3">
+            <span>{(statsError as Error).message}</span>
+            <Button size="sm" variant="outline" onClick={() => void refetchStats()}>
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {removeError && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{removeError}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
         {cards.map(([label, value]) => (
@@ -115,7 +146,12 @@ function AdminPage() {
               <TableRow>
                 <TableCell colSpan={7} className="h-20 text-center">
                   <Alert variant="destructive">
-                    <AlertDescription>{(error as Error).message}</AlertDescription>
+                    <AlertDescription className="flex items-center justify-center gap-3">
+                      <span>{(error as Error).message}</span>
+                      <Button size="sm" variant="outline" onClick={() => void refetch()}>
+                        Retry
+                      </Button>
+                    </AlertDescription>
                   </Alert>
                 </TableCell>
               </TableRow>
