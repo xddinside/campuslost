@@ -257,18 +257,30 @@ class LifecycleWorkflowTest {
 
             Future<Claim> creator = pool.submit(() ->
                     workflow.create(bob, found.getId(), request("That is my bottle, the blue one.", lost.getId())));
-            // Let the create reach its first lock before probing.
-            Thread.sleep(500);
 
-            // If create had locked the target first, the target would be held
-            // while it waits on the linked report, and this probe would block.
-            Future<Boolean> probe = pool.submit(() -> tx.execute(status -> {
-                items.findByIdForUpdate(found.getId());
-                return Boolean.TRUE;
-            }));
-            assertThat(probe.get(10, TimeUnit.SECONDS))
+            // Handshake instead of a sleep: probe the target's lock repeatedly.
+            // Under the correct order the creator waits on the linked report
+            // while never touching the target, so every probe acquires it
+            // instantly. Under the old order the creator would hold the target
+            // while it waited on the linked report — the first probe after it
+            // grabbed the lock would then block until the holder released.
+            boolean targetHeldByCreator = false;
+            for (int i = 0; i < 40 && !targetHeldByCreator; i++) {
+                try {
+                    pool.submit(() -> tx.execute(status -> {
+                        items.findByIdForUpdate(found.getId());
+                        return null;
+                    })).get(400, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException e) {
+                    targetHeldByCreator = true;
+                }
+                Thread.sleep(25);
+            }
+            assertThat(targetHeldByCreator)
                     .as("create must wait on the linked report without holding the target lock")
-                    .isTrue();
+                    .isFalse();
+            // The creator is still genuinely blocked on the held lock.
+            assertThat(creator.isDone()).isFalse();
 
             release.countDown();
             assertThat(creator.get(15, TimeUnit.SECONDS)).isNotNull();

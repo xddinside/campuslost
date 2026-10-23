@@ -457,6 +457,27 @@ class ApiSecurityAndPrivacyTest {
                 .andExpect(jsonPath("$.user.email").value(alice.getEmail()));
     }
 
+    @Test
+    void registrationRejectsPasswordsBeyondTheBcryptByteLimit() throws Exception {
+        String tooLong = "a".repeat(73);
+        mvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Long Password\",\"email\":\"long@test.dev\"," +
+                                "\"password\":\"" + tooLong + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PASSWORD_TOO_LONG"))
+                .andExpect(jsonPath("$.fieldErrors.password").isNotEmpty());
+
+        // The same length expressed in multi-byte characters counts as bytes.
+        String emoji = "🔒".repeat(20); // 80 UTF-8 bytes
+        mvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Emoji Password\",\"email\":\"emoji@test.dev\"," +
+                                "\"password\":\"" + emoji + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("PASSWORD_TOO_LONG"));
+    }
+
     private byte[] pngBytes() throws Exception {
         BufferedImage image = new BufferedImage(12, 12, BufferedImage.TYPE_INT_RGB);
         ByteArrayOutputStream out = new ByteArrayOutputStream();

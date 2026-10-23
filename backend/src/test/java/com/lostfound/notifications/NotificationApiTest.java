@@ -323,52 +323,42 @@ class NotificationApiTest {
     }
 
     /**
-     * A delivery racing a read-all must land on one side or the other — never
-     * torn: every committed row is either fully read or fully unread, and the
-     * reported unread count agrees with the stored rows.
+     * Both cutoff orders, deterministically: an alert committed before the
+     * read-all is marked with its exact id, and an alert committed after it
+     * stays unread. No fabricated timestamps stand in for real delivery.
      */
     @Test
-    void concurrentReadAllAndDeliveryLeaveConsistentState() throws Exception {
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
-            for (int round = 0; round < 4; round++) {
-                Item found = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN,
-                        "Umbrella round " + round);
-                Claim claim = fixtures.claim(found, bob, ClaimStatus.APPROVED);
-                CountDownLatch barrier = new CountDownLatch(1);
-                Future<?> reader = pool.submit(() -> {
-                    barrier.await(10, TimeUnit.SECONDS);
-                    mvc.perform(post("/api/me/notifications/read-all")
-                            .header("Authorization", bearer(bob)));
-                    return null;
-                });
-                Future<?> deliverer = pool.submit(() -> {
-                    barrier.await(10, TimeUnit.SECONDS);
-                    service.handleClaimChanged(claimEvent(claim));
-                    return null;
-                });
-                barrier.countDown();
-                reader.get(20, TimeUnit.SECONDS);
-                deliverer.get(20, TimeUnit.SECONDS);
+    void readAllMarksCommittedArrivalsAndLeavesLaterOnesUnread() throws Exception {
+        // Order A: delivery commits before the read-all request.
+        Item foundOne = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "First umbrella");
+        Claim first = fixtures.claim(foundOne, bob, ClaimStatus.APPROVED);
+        service.handleClaimChanged(claimEvent(first));
+        Notification before = notifications.findAll().stream()
+                .filter(n -> n.getRecipientId().equals(bob.getId()))
+                .findFirst().orElseThrow();
 
-                // Consistency, not a fixed outcome: the race is real, so the
-                // alert may have landed before or after the read-all.
-                List<Notification> rows = notifications.findAll().stream()
-                        .filter(n -> n.getRecipientId().equals(bob.getId()))
-                        .toList();
-                for (Notification row : rows) {
-                    Notification stored = notifications.findById(row.getId()).orElseThrow();
-                    assertThat(stored.getCreatedAt()).isNotNull();
-                }
-                mvc.perform(get("/api/me/notifications")
-                                .header("Authorization", bearer(bob)))
-                        .andExpect(status().isOk())
-                        .andExpect(jsonPath("$.unreadCount").value(
-                                rows.stream().filter(n -> n.getReadAt() == null).count()));
-            }
-        } finally {
-            pool.shutdownNow();
-        }
+        mvc.perform(post("/api/me/notifications/read-all")
+                        .header("Authorization", bearer(bob)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(0));
+        assertThat(notifications.findById(before.getId()).orElseThrow().getReadAt())
+                .as("the alert that committed before the cutoff is marked read")
+                .isNotNull();
+
+        // Order B: the next delivery commits after the cutoff and survives.
+        Item foundTwo = fixtures.item(alice, ItemType.FOUND, ItemStatus.OPEN, "Second umbrella");
+        Claim second = fixtures.claim(foundTwo, bob, ClaimStatus.APPROVED);
+        service.handleClaimChanged(claimEvent(second));
+        Notification after = notifications.findAll().stream()
+                .filter(n -> n.getRecipientId().equals(bob.getId()) && n.getId() != before.getId())
+                .findFirst().orElseThrow();
+
+        assertThat(notifications.findById(after.getId()).orElseThrow().getReadAt()).isNull();
+        mvc.perform(get("/api/me/notifications").header("Authorization", bearer(bob)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unreadCount").value(1))
+                .andExpect(jsonPath("$.notifications[0].id").value(after.getId()))
+                .andExpect(jsonPath("$.notifications[0].claimId").value(second.getId()));
     }
 
     @Test

@@ -62,4 +62,18 @@ class RateLimitFilterTest {
         filter.doFilter(request, response, new MockFilterChain());
         assertThat(response.getStatus()).isEqualTo(200);
     }
+
+    @Test
+    void encodedAuthPathsHitTheSameBucket() throws Exception {
+        // /api/auth/%6cogin decodes to the login endpoint: exhausting the
+        // plain bucket must already limit the encoded spelling.
+        for (int i = 0; i < 5; i++) {
+            assertThat(attempt("203.0.113.77", null).getStatus()).isEqualTo(200);
+        }
+        MockHttpServletRequest encoded = new MockHttpServletRequest("POST", "/api/auth/%6cogin");
+        encoded.setRemoteAddr("203.0.113.77");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(encoded, response, new MockFilterChain());
+        assertThat(response.getStatus()).isEqualTo(429);
+    }
 }
