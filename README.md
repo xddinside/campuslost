@@ -79,12 +79,13 @@ scripts/adopt-legacy-db.sh lostfound
 ```
 
 The script performs the checked path end to end: it dumps a backup, verifies
-the schema is exactly the expected legacy shape (`users`, `items`, `claims`,
-and no `flyway_schema_history`), records row counts and id ranges before the
-migration, runs one boot with `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true`, then
-re-runs the same checks afterwards so any lost or renumbered rows surface
-immediately. `PopulatedUpgradeTest` keeps this upgrade path pinned in CI on a
-populated schema. Normal startups afterwards need no flag.
+the schema is exactly the expected legacy shape (`users`, `items`, `claims`
+with the columns and indexes the migrations were written against, and no
+`flyway_schema_history`), records row counts and id ranges, runs the Flyway
+plugin against the named database with explicit baseline adoption — no app
+server boots — then re-runs the same checks and fails if anything moved.
+`PopulatedUpgradeTest` keeps this upgrade path pinned in CI on a populated
+schema. Normal startups afterwards need no flag.
 
 ## API overview
 

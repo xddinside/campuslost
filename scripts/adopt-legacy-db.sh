@@ -1,44 +1,58 @@
 #!/usr/bin/env bash
 # One-time deliberate adoption of a pre-Flyway database. Backs up first,
-# verifies the schema is the expected legacy shape, records row counts and
-# ids, runs one boot with explicit baseline adoption, then re-checks.
+# verifies the schema is the expected legacy shape (tables AND the columns
+# and indexes the app relies on), records row counts and id ranges, migrates
+# with Flyway directly — no app server involved — then re-runs the same
+# checks and fails on any mismatch.
 #
 # Usage: scripts/adopt-legacy-db.sh [database]   (default: lostfound)
 set -euo pipefail
 DB="${1:-lostfound}"
 MYSQL="mariadb -ulostfound -plostfound"
+DB_URL="jdbc:mariadb://localhost:3306/${DB}?useUnicode=true&characterEncoding=utf8"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKUP="backup-${DB}-pre-adoption-$(date +%Y%m%d%H%M%S).sql"
 
-echo "==> 1. Backup"
+echo "==> 1. Backup of $DB"
 mariadb-dump -ulostfound -plostfound "$DB" > "$BACKUP"
 echo "    wrote $BACKUP"
 
 echo "==> 2. Preflight: schema must be the expected legacy shape"
-$MYSQL "$DB" -e "
-SELECT CASE
-  WHEN (SELECT COUNT(*) FROM information_schema.tables
-        WHERE table_schema = '$DB' AND table_name = 'flyway_schema_history') > 0
-  THEN 'FAIL: already has flyway_schema_history — nothing to adopt'
-  ELSE 'ok: no flyway_schema_history' END AS check_history;
-SELECT table_name FROM information_schema.tables
-  WHERE table_schema = '$DB' AND table_name IN ('users', 'items', 'claims')
-  ORDER BY table_name;
-"
-expected=$($MYSQL -N "$DB" -e "
+if [[ $($MYSQL -N "$DB" -e "
 SELECT COUNT(*) FROM information_schema.tables
-  WHERE table_schema = '$DB' AND table_name IN ('users', 'items', 'claims');")
-history=$($MYSQL -N "$DB" -e "
-SELECT COUNT(*) FROM information_schema.tables
-  WHERE table_schema = '$DB' AND table_name = 'flyway_schema_history';")
-if [[ "$history" != "0" ]]; then
+  WHERE table_schema = '$DB' AND table_name = 'flyway_schema_history';") != "0" ]]; then
   echo "FAIL: $DB already has flyway_schema_history; adoption is not needed." >&2
   exit 1
 fi
-if [[ "$expected" != "3" ]]; then
-  echo "FAIL: expected legacy tables users/items/claims (found $expected/3)." >&2
+
+# The legacy tables must exist with the columns and constraints the
+# migrations were written against — not merely tables with those names.
+missing=$($MYSQL -N "$DB" -e "
+SELECT GROUP_CONCAT(m.expected) FROM (
+  SELECT CONCAT(tbl, '.', col) AS expected FROM (
+    SELECT 'users' tbl, 'email' col UNION SELECT 'users', 'password_hash'
+    UNION SELECT 'users', 'role' UNION SELECT 'items', 'reporter_id'
+    UNION SELECT 'items', 'type' UNION SELECT 'items', 'status'
+    UNION SELECT 'items', 'title' UNION SELECT 'claims', 'item_id'
+    UNION SELECT 'claims', 'claimant_id' UNION SELECT 'claims', 'status'
+    UNION SELECT 'claims', 'message'
+  ) req
+  WHERE NOT EXISTS (
+    SELECT 1 FROM information_schema.columns c
+    WHERE c.table_schema = '$DB' AND c.table_name = req.tbl AND c.column_name = req.col
+  )
+) m;
+SELECT CONCAT('uk_users_email') WHERE NOT EXISTS (
+  SELECT 1 FROM information_schema.statistics s
+  WHERE s.table_schema = '$DB' AND s.table_name = 'users'
+    AND s.index_name = 'uk_users_email' AND s.column_name = 'email'
+);")
+if [[ -n "$missing" && "$missing" != "NULL" ]]; then
+  echo "FAIL: $DB does not look like the app's legacy schema; missing: $missing" >&2
   echo "This script only adopts the pre-Flyway schema the app shipped." >&2
   exit 1
 fi
+echo "    legacy tables, columns, and indexes verified in $DB"
 
 echo "==> 3. Record pre-migration row counts and id ranges"
 before=$($MYSQL -N "$DB" -e "
@@ -47,36 +61,32 @@ SELECT CONCAT('items=', COUNT(*), ':', COALESCE(MIN(id),0), '-', COALESCE(MAX(id
 SELECT CONCAT('claims=', COUNT(*), ':', COALESCE(MIN(id),0), '-', COALESCE(MAX(id),0)) FROM claims;")
 echo "$before" | sed 's/^/    before /'
 
-echo "==> 4. Boot once with explicit baseline adoption"
-echo "    Stopping after 'Started'; the server then exits on its own."
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+echo "==> 4. Migrate with Flyway directly (no server, baseline adopted explicitly)"
 cd "$ROOT/backend"
 source "$ROOT/scripts/java-env.sh" >/dev/null
-set +e
-SPRING_FLYWAY_BASELINE_ON_MIGRATE=true timeout 300 ./mvnw -q spring-boot:run \
-  > /tmp/adopt-boot.log 2>&1 &
-boot=$!
-for _ in $(seq 1 120); do
-  if grep -q "Started BackendApplication" /tmp/adopt-boot.log 2>/dev/null; then break; fi
-  if ! kill -0 $boot 2>/dev/null; then break; fi
-  sleep 2
-done
-kill $boot 2>/dev/null
-wait $boot 2>/dev/null
-set -e
-if ! grep -q "Started BackendApplication" /tmp/adopt-boot.log; then
-  echo "FAIL: backend did not start; see /tmp/adopt-boot.log" >&2
+timeout 300 ./mvnw -q org.flywaydb:flyway-maven-plugin:12.4.0:migrate \
+  -Dflyway.url="$DB_URL" \
+  -Dflyway.user=lostfound \
+  -Dflyway.password=lostfound \
+  -Dflyway.locations="filesystem:src/main/resources/db/migration" \
+  -Dflyway.baselineOnMigrate=true 2>&1 | grep -iE "migrat|baseline|error" | head -15 || true
+
+echo "==> 5. Verify the same database was migrated and data preserved"
+version=$($MYSQL -N "$DB" -e "SELECT MAX(version) FROM flyway_schema_history;" 2>/dev/null || echo "")
+if [[ -z "$version" ]]; then
+  echo "FAIL: no flyway_schema_history in $DB — nothing was migrated." >&2
   exit 1
 fi
-grep -E "Successfully applied|Flyway" /tmp/adopt-boot.log | tail -3 | sed 's/^/    /'
-
-echo "==> 5. Verify preserved data"
 after=$($MYSQL -N "$DB" -e "
 SELECT CONCAT('users=', COUNT(*), ':', COALESCE(MIN(id),0), '-', COALESCE(MAX(id),0)) FROM users;
 SELECT CONCAT('items=', COUNT(*), ':', COALESCE(MIN(id),0), '-', COALESCE(MAX(id),0)) FROM items;
-SELECT CONCAT('claims=', COUNT(*), ':', COALESCE(MIN(id),0), '-', COALESCE(MAX(id),0)) FROM claims;
-SELECT CONCAT('schema=', MAX(version)) FROM flyway_schema_history;")
+SELECT CONCAT('claims=', COUNT(*), ':', COALESCE(MIN(id),0), '-', COALESCE(MAX(id),0)) FROM claims;")
 echo "$after" | sed 's/^/    after  /'
-$MYSQL -N "$DB" -e "SELECT table_name FROM information_schema.tables WHERE table_schema='$DB' ORDER BY table_name" | sed 's/^/    table: /'
+echo "    schema=$version"
 
-echo "==> Done. Compare the before/after lines: every count and id range must match."
+if [[ "$before" != "$after" ]]; then
+  echo "FAIL: row counts or id ranges changed during migration." >&2
+  echo "    Restore from $BACKUP before retrying." >&2
+  exit 1
+fi
+echo "==> Done: $DB adopted at V$version with all rows preserved."
