@@ -241,16 +241,12 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
         <div className="grid gap-2">
           <p className="m-0 inline-flex items-center gap-1.5 text-sm font-semibold text-success-foreground">
             <CheckCircle aria-hidden="true" size={18} weight="fill" />
-            {verifiedAt ? 'Handover confirmed in person' : 'Resolved without pickup verification'}
+            {verifiedAt ? 'Picked up in person' : 'Resolved without pickup verification'}
           </p>
           <p className="m-0 text-sm text-muted-foreground">
             {verifiedAt
-              ? `The pickup code was verified at ${formatFullTime(verifiedAt)}. ${
-                  claim.lostReportId
-                    ? 'The found report and linked lost report are both resolved.'
-                    : 'The found report is now resolved.'
-                }`
-              : 'This claim was resolved before pickup codes were introduced. No verified pickup was recorded for it.'}
+              ? `Verified ${formatFullTime(verifiedAt)}.`
+              : 'No pickup code was recorded for this claim.'}
           </p>
         </div>
       </StatusShell>
@@ -309,8 +305,8 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
             )}
 
             <p className="m-0 rounded-xl bg-card p-3 text-xs leading-relaxed text-muted-foreground ring-1 ring-hairline">
-              Keep this code on your own device. The finder enters it on theirs, so the
-              handover is proven without sharing it in a chat or photo.
+              The finder enters it on their device — no need to share it in a chat
+              or photo.
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -430,8 +426,8 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
                 {isVerifying ? 'Verifying…' : 'Verify pickup'}
               </Button>
               <p className="m-0 text-xs text-muted-foreground">
-                Ask the claimant to show the code on their device. Enter all six digits,
-                including any leading zeros.
+                Enter all six digits from the claimant’s device, including leading
+                zeros.
               </p>
             </form>
 
@@ -450,9 +446,8 @@ export function HandoverPanel({ claim, onChanged }: HandoverPanelProps) {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Release this pickup?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    The claim becomes cancelled, the found report and any linked lost
-                    report reopen, and the current pickup code stops working. Use this if
-                    the owner did not arrive or you cannot verify the handover.
+                    The claim is cancelled, both reports reopen, and the pickup code
+                    stops working. Use this if the owner did not arrive.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <div className="grid gap-2">

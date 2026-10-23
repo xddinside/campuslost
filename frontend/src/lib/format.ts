@@ -9,6 +9,16 @@ export function formatDate(iso: string | null): string {
   })
 }
 
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 export function timeAgo(iso: string | null): string {
   if (!iso) return '—'
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)

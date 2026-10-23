@@ -66,8 +66,8 @@ export function MatchPanel({ item }: MatchPanelProps) {
             {sourceIsLost ? 'Found reports that may be yours' : 'Lost reports that may describe this item'}
           </h2>
           <p className="m-0 mt-1 text-[0.8125rem] leading-relaxed text-muted-foreground">
-            Ranked by a transparent similarity score across description, category,
-            location and date. A score never approves a claim or proves ownership.
+            Ranked by similarity across description, category, location and date.
+            A score never proves ownership.
           </p>
         </header>
 
@@ -137,8 +137,8 @@ export function MatchPanel({ item }: MatchPanelProps) {
               <p className="m-0 text-sm font-bold text-foreground">No likely matches yet</p>
               <p className="m-0 text-xs text-muted-foreground">
                 {sourceIsLost
-                  ? 'We compare every new found report with this description. If someone hands in something similar, it will appear here.'
-                  : 'We compare every new lost report with this description. If someone describes this item, it will appear here.'}
+                  ? 'New found reports are compared with this description as they arrive.'
+                  : 'New lost reports are compared with this description as they arrive.'}
               </p>
               <p className="m-0 text-xs text-muted-foreground">
                 Only genuine text overlap can create a suggestion; category,
@@ -264,8 +264,8 @@ function MatchCard({
           </Button>
           <span className="text-[11px] text-muted-foreground">
             {sourceIsLost
-              ? 'Claim from that page with this lost report attached.'
-              : 'You can inspect this report; only its reporter can claim your item.'}
+              ? 'Claim it from that page.'
+              : 'Only its reporter can claim your item.'}
           </span>
         </div>
       </div>

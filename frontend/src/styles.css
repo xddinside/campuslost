@@ -252,37 +252,39 @@ pre code {
   padding-block: 3rem;
 }
 
-.demo-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: clamp(1.75rem, 3vw, 2.25rem);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.1;
-  text-wrap: balance;
-}
+@layer components {
+  .demo-title {
+    margin: 0;
+    color: var(--foreground);
+    font-size: clamp(1.75rem, 3vw, 2.25rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
 
-.demo-section-title {
-  margin: 0;
-  color: var(--foreground);
-  font-size: 1.0625rem;
-  font-weight: 650;
-  letter-spacing: -0.015em;
-}
+  .demo-section-title {
+    margin: 0;
+    color: var(--foreground);
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+  }
 
-.demo-muted {
-  color: var(--muted-foreground);
-}
+  .demo-muted {
+    color: var(--muted-foreground);
+  }
 
-.display-title {
-  font-family: inherit;
-}
+  .display-title {
+    font-family: inherit;
+  }
 
-.island-kicker {
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  .island-kicker {
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
 }
 
 .rise-in {
@@ -563,6 +565,31 @@ pre code {
 .item-row:hover .item-row-chevron {
   color: var(--muted-foreground);
   transform: translateX(2px);
+}
+
+@layer components {
+  .group-label {
+    margin: 0 0 0.5rem;
+    padding-inline: 0.5rem;
+    color: var(--muted-foreground);
+    font-size: 0.72rem;
+    font-weight: 650;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .group-note {
+    padding: 1.15rem 1.4rem;
+    color: var(--muted-foreground);
+    font-size: 0.875rem;
+  }
+
+  .row-sub {
+    margin: 0.15rem 0 0;
+    color: var(--muted-foreground);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
 }
 
 /* ---------- Item detail ---------- */

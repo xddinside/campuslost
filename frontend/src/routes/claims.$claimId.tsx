@@ -127,16 +127,14 @@ function ClaimHistoryCard({ claim, userId }: { claim: Claim; userId: number }) {
 
   const detail =
     claim.status === 'PENDING'
-      ? 'The reporter hasn’t reviewed it yet.'
+      ? 'Waiting for the reporter’s review.'
       : claim.status === 'APPROVED'
         ? claim.itemType === 'FOUND'
-          ? 'Approved. Use the contact details below to arrange pickup.'
-          : 'Approved. The reporter marked this resolved.'
-        : claim.status === 'COMPLETED'
-          ? claim.itemType === 'FOUND'
-            ? 'This pickup is complete.'
-            : 'Resolved by the reporter.'
-          : 'This response is no longer active.'
+          ? 'Use the contact details below to arrange pickup.'
+          : 'The reporter marked this resolved.'
+        : claim.status === 'COMPLETED' && claim.itemType === 'LOST'
+          ? 'Resolved by the reporter.'
+          : null
 
   return (
     <Card className="existing-claim-panel">
@@ -155,7 +153,7 @@ function ClaimHistoryCard({ claim, userId }: { claim: Claim; userId: number }) {
         >
           View report →
         </Link>
-        <p>{detail}</p>
+        {detail && <p>{detail}</p>}
         <blockquote>{claim.message}</blockquote>
         <div className="mt-3 grid gap-3">
           <ContactPanel claim={claim} userId={userId} />

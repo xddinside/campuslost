@@ -177,7 +177,7 @@ function ItemDetailPage() {
               <div className="min-w-0">
                 <h2 id="reporter-heading">Posted by {item.reporterName}</h2>
                 <p className="m-0 mt-1 text-xs text-muted-foreground">
-                  Email and phone are shared only with the people in an approved claim.
+                  Shared only with people in an approved claim.
                 </p>
               </div>
             </section>
@@ -342,7 +342,7 @@ function ManagePanel({ item }: { item: Item }) {
           )}
           {item.status === 'RESERVED' && (
             <p className="m-0 text-xs text-muted-foreground">
-              Release the approved claim below before editing or changing this report.
+              Release the claim below to edit or reopen this report.
             </p>
           )}
           {item.status === 'CLOSED' && (
@@ -556,16 +556,14 @@ function ExistingClaimPanel({ claim, item, userId }: { claim: Claim; item: Item;
 
   const detail =
     claim.status === 'PENDING'
-      ? `${item.reporterName} hasn’t reviewed it yet.`
+      ? `Waiting for ${item.reporterName}’s review.`
       : claim.status === 'APPROVED'
         ? item.type === 'FOUND'
-          ? `Approved. Use the contact details below to arrange pickup.`
-          : `Approved. ${item.reporterName} marked your response resolved.`
-        : claim.status === 'COMPLETED'
-          ? item.type === 'FOUND'
-            ? 'This pickup is complete.'
-            : `Resolved by ${item.reporterName}.`
-          : 'This response is no longer active. The report may still be open.'
+          ? 'Use the contact details below to arrange pickup.'
+          : `${item.reporterName} marked this resolved.`
+        : claim.status === 'COMPLETED' && item.type === 'LOST'
+          ? `Resolved by ${item.reporterName}.`
+          : null
 
   const cancel = useMutation({
     mutationFn: () => api<void>(`/claims/${claim.id}`, { method: 'DELETE' }),
@@ -580,7 +578,7 @@ function ExistingClaimPanel({ claim, item, userId }: { claim: Claim; item: Item;
           <h2>{heading}</h2>
           <ClaimBadge status={claim.status} />
         </div>
-        <p>{detail}</p>
+        {detail && <p>{detail}</p>}
         <blockquote>{claim.message}</blockquote>
         {claim.lostReportId && (
           <Link
@@ -605,8 +603,7 @@ function ExistingClaimPanel({ claim, item, userId }: { claim: Claim; item: Item;
               <AlertDialogHeader>
                 <AlertDialogTitle>Cancel this {noun.toLowerCase()}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  The message stays in history as cancelled. You can send a new one later
-                  while the report is open.
+                  It stays in history. You can send a new one while the report is open.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -744,8 +741,8 @@ function ClaimCard({
                   <AlertDialogTitle>Approve this response?</AlertDialogTitle>
                   <AlertDialogDescription>
                     {item.type === 'FOUND'
-                      ? 'The item is reserved for this person and other pending responses are rejected. Contact details unlock now; pickup is not complete until handover is verified.'
-                      : 'The report is resolved and this response completes. Other pending responses are rejected.'}
+                      ? 'The item is reserved for this person; other pending responses are rejected. Pickup completes when the handover is verified.'
+                      : 'The report is resolved and other pending responses are rejected.'}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
