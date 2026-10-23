@@ -29,6 +29,13 @@ public class AuthService {
             throw new ApiException(HttpStatus.CONFLICT, "EMAIL_IN_USE",
                     "An account with this email already exists");
         }
+        // BCrypt accepts at most 72 UTF-8 bytes; reject oversized input as a
+        // field error rather than letting the encoder blow up as a 500.
+        if (request.password().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PASSWORD_TOO_LONG",
+                    "Password must be 72 bytes or fewer.",
+                    java.util.Map.of("password", "Password must be 72 bytes or fewer."));
+        }
         User user = new User();
         user.setName(request.name().trim());
         user.setEmail(email);

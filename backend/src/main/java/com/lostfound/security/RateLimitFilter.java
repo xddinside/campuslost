@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -53,21 +55,20 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
-        return !("/api/auth/login".equals(request.getRequestURI())
-                || "/api/auth/register".equals(request.getRequestURI()));
+        return authBucket(request) == null;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String path = request.getRequestURI();
-        boolean login = "/api/auth/login".equals(path);
+        String bucket = authBucket(request);
+        boolean login = "login".equals(bucket);
         int limit = login ? loginAttempts : registerAttempts;
         long window = login ? loginWindowSeconds : registerWindowSeconds;
         Instant now = Instant.now();
         Instant cutoff = now.minusSeconds(window);
-        Key key = new Key(clientAddress(request), path);
+        Key key = new Key(clientAddress(request), bucket);
 
         Deque<Instant> queue = hits.computeIfAbsent(key, ignored -> new ArrayDeque<>());
         long retryAfter;
@@ -96,6 +97,33 @@ public class RateLimitFilter extends OncePerRequestFilter {
         objectMapper.writeValue(response.getWriter(), ErrorResponse.of(
                 "RATE_LIMITED",
                 "Too many attempts. Please wait a moment and try again."));
+    }
+
+    /**
+     * The request URI arrives encoded — /api/auth/%6cogin mapped to the same
+     * authentication controller while slipping past a literal comparison.
+     * Decode once (matching the container's routing behaviour), strip the
+     * context path, and fold every spelling into the endpoint's bucket.
+     */
+    private String authBucket(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String context = request.getContextPath();
+        if (context != null && !context.isEmpty() && uri.startsWith(context)) {
+            uri = uri.substring(context.length());
+        }
+        String path;
+        try {
+            path = URLDecoder.decode(uri, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        if ("/api/auth/login".equals(path)) {
+            return "login";
+        }
+        if ("/api/auth/register".equals(path)) {
+            return "register";
+        }
+        return null;
     }
 
     private String clientAddress(HttpServletRequest request) {
