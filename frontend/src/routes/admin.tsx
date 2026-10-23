@@ -56,11 +56,13 @@ function AdminPage() {
   })
 
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const [confirmId, setConfirmId] = useState<number | null>(null)
 
   const remove = useMutation({
     mutationFn: (id: number) => api<void>(`/items/${id}`, { method: 'DELETE' }),
     onSuccess: async () => {
       setRemoveError(null)
+      setConfirmId(null)
       await invalidateWorkflow(queryClient)
     },
     onError: (err, id) => {
@@ -98,12 +100,6 @@ function AdminPage() {
           </AlertDescription>
         </Alert>
       )}
-      {removeError && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{removeError}</AlertDescription>
-        </Alert>
-      )}
-
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
         {cards.map(([label, value]) => (
           <Card key={label} className="gap-0 rounded-xl py-0 text-center shadow-none ring-border">
@@ -181,7 +177,17 @@ function AdminPage() {
                   {item.status === 'RESERVED' ? (
                     <span className="text-xs text-muted-foreground">Release first</span>
                   ) : (
-                    <AlertDialog>
+                    <AlertDialog
+                      open={confirmId === item.id}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          setConfirmId(item.id)
+                          setRemoveError(null)
+                        } else if (!remove.isPending) {
+                          setConfirmId(null)
+                        }
+                      }}
+                    >
                       <AlertDialogTrigger
                         render={
                           <Button variant="destructive" size="sm" disabled={remove.isPending}>
@@ -197,13 +203,24 @@ function AdminPage() {
                             history is preserved and this cannot be undone from the app.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
+                        {removeError && (
+                          <Alert variant="destructive">
+                            <AlertDescription>{removeError}</AlertDescription>
+                          </Alert>
+                        )}
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogCancel disabled={remove.isPending}>Cancel</AlertDialogCancel>
                           <AlertDialogAction
                             variant="destructive"
-                            onClick={() => remove.mutate(item.id)}
+                            disabled={remove.isPending}
+                            onClick={(event) => {
+                              // The dialog stays open until the server accepts
+                              // the delete, so a failure keeps its context.
+                              event.preventDefault()
+                              remove.mutate(item.id)
+                            }}
                           >
-                            Delete report
+                            {remove.isPending ? 'Deleting…' : 'Delete report'}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>

@@ -1,6 +1,6 @@
 import type { FieldErrorBody, PhotoResponse, UserDto } from './types'
 
-const AUTH_KEY = 'laf.auth'
+export const AUTH_KEY = 'laf.auth'
 export const AUTH_EXPIRED_EVENT = 'campuslost:auth-expired'
 
 export interface StoredAuth {
