@@ -1033,3 +1033,13 @@ pre code {
     @apply font-sans;
   }
 }
+
+.item-row-photo-empty {
+  display: grid;
+  place-items: center;
+  color: oklch(0.7 0.008 264);
+}
+
+.dark .item-row-photo-empty {
+  color: oklch(0.55 0.01 264);
+}

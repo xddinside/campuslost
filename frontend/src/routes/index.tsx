@@ -314,13 +314,17 @@ function ItemRow({ item }: { item: Item }) {
       params={{ id: String(item.id) }}
       className="item-row group no-underline"
     >
-      {item.photoUrl && (
+      {item.photoUrl ? (
         <img
           src={item.photoUrl}
           alt=""
           className="item-row-photo"
           loading="lazy"
         />
+      ) : (
+        <span className="item-row-photo item-row-photo-empty" aria-hidden="true">
+          <Package size={22} />
+        </span>
       )}
       <div className="min-w-0 flex-1">
         <div className="item-row-heading">
