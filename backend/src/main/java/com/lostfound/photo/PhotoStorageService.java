@@ -180,6 +180,9 @@ public class PhotoStorageService {
                 }
                 imageWidth = image.getWidth();
                 imageHeight = image.getHeight();
+                // The row is not committed yet: if the transaction rolls back
+                // (metadata save or commit failure), the file must go with it.
+                registerRollbackCleanup(target);
             } finally {
                 reader.dispose();
             }
@@ -332,6 +335,25 @@ public class PhotoStorageService {
             return "";
         }
         return name.substring(dot + 1).toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * A written file outlives its transaction only if the transaction commits.
+     * Registered the moment the file exists, so a rollback from the metadata
+     * save or commit never leaves an orphan the cleanup job cannot find.
+     */
+    private static void registerRollbackCleanup(Path path) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                    new TransactionSynchronization() {
+                        @Override
+                        public void afterCompletion(int status) {
+                            if (status == STATUS_ROLLED_BACK) {
+                                deleteQuietly(path);
+                            }
+                        }
+                    });
+        }
     }
 
     private static void deleteAfterCommit(Path path) {

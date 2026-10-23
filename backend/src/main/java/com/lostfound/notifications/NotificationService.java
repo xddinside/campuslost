@@ -244,10 +244,16 @@ public class NotificationService {
 
     @Transactional
     public UnreadCountResponse markAllRead(User user) {
-        Instant now = Instant.now();
-        // The cutoff keeps a notification committed after this moment unread.
-        // Match rows use the same visibility rule as list, count, and read-one.
-        notifications.markAllRead(user.getId(), now, now);
+        Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        // Capture the exact visible rows first, then update only those ids.
+        // A delivery whose insert is uncommitted at this point gets an id the
+        // snapshot never saw, so it stays unread when it commits — a time
+        // predicate would instead block on its row lock and then mark it.
+        List<Long> ids = notifications.findVisibleUnreadIds(
+                user.getId(), NotificationType.MATCH_FOUND, ItemStatus.OPEN);
+        if (!ids.isEmpty()) {
+            notifications.markReadByIds(ids, now);
+        }
         return new UnreadCountResponse(0);
     }
 

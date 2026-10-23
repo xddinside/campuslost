@@ -110,27 +110,35 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
                          @Param("recipientId") Long recipientId,
                          @Param("readAt") Instant readAt);
 
-    @Query(value = """
-            update notifications
-            set read_at = :readAt
-            where recipient_id = :recipientId
-              and active = true
-              and read_at is null
-              and created_at <= :cutoff
-              and (type <> 'MATCH_FOUND'
-                   or (exists (select 1 from items l
-                               where l.id = notifications.lost_item_id
-                                 and l.deleted_at is null
-                                 and l.status = 'OPEN'
-                                 and l.version = notifications.lost_item_version)
-                       and exists (select 1 from items f
-                                   where f.id = notifications.found_item_id
-                                     and f.deleted_at is null
-                                     and f.status = 'OPEN'
-                                     and f.version = notifications.found_item_version)))
-            """, nativeQuery = true)
+    /** The rows a read-all is allowed to touch — captured before updating. */
+    @Query("""
+            select n.id from Notification n
+            where n.recipientId = :recipientId
+              and n.active = true
+              and n.readAt is null
+              and (n.type <> :matchType
+                   or (exists (select 1 from Item l
+                               where l.id = n.lostItemId
+                                 and l.deletedAt is null
+                                 and l.status = :openStatus
+                                 and l.version = n.lostItemVersion)
+                       and exists (select 1 from Item f
+                                   where f.id = n.foundItemId
+                                     and f.deletedAt is null
+                                     and f.status = :openStatus
+                                     and f.version = n.foundItemVersion)))
+            """)
+    List<Long> findVisibleUnreadIds(@Param("recipientId") Long recipientId,
+                                  @Param("matchType") NotificationType matchType,
+                                  @Param("openStatus") ItemStatus openStatus);
+
+    @Query("""
+            update Notification n
+            set n.readAt = :readAt
+            where n.id in :ids
+              and n.readAt is null
+            """)
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    int markAllRead(@Param("recipientId") Long recipientId,
-                    @Param("readAt") Instant readAt,
-                    @Param("cutoff") Instant cutoff);
+    int markReadByIds(@Param("ids") List<Long> ids,
+                      @Param("readAt") Instant readAt);
 }
